@@ -1,0 +1,48 @@
+# MSCapital – Real Financial Market Forecasting
+
+Kaggle 比赛实战记录：用真实市场微观结构数据（盘口/委托流/成交）预测未来价格变化。
+
+- 比赛页: https://www.kaggle.com/competitions/ms-capital-real-financial-market-forecasting
+- 指标: 余弦相似度（预测 vs 真实目标）
+- 截止: 2026-10-10 00:00 (北京时间) | 每日 5 次提交 | 个人赛
+
+## 环境
+
+- RTX 4070 12GB / 10 核 CPU / 64GB RAM
+- Python 3.9 + LightGBM + PyTorch 2.1 (cu121)
+
+## 数据
+
+| 表 | 行数 | 内容 |
+|---|---|---|
+| train/market | 2.22亿 | 10 分钟盘口+聚合成交（13 列） |
+| train/order | 1.70亿 | 1 分钟委托流（价格/数量/方向/增撤单） |
+| train/transaction | 1.04亿 | 1 分钟逐笔成交（价格/数量/主动方向） |
+| train/label | 126万 | sample_id → target（未来收益） |
+| test 三表 | ~3.1亿 | 647,896 条预测 |
+
+## 管线
+
+```
+data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*.parquet
+→ train_v2.py (LightGBM, 时序验证) → output/submission_v2.csv → submit.py (kaggle API)
+```
+
+## 提交记录
+
+| # | 日期 | 描述 | Val cosine | Public | 备注 |
+|---|---|---|---|---|---|
+| 1 | 2026-08-10 | lgb baseline 56 特征 (v1) | 0.1214 | 0.104 | 基础盘口+订单+成交聚合 |
+| 2 | 2026-08-10 | lgb v2 93 特征 (多窗口变化率) | 0.1360 | - | v1+v2 特征合并 |
+
+## 关键经验
+
+1. **验证必须防泄漏**：全量模型（含验证月）在验证集上 cosine 高达 0.30，真实无泄漏仅 0.136。按月份时序切分（0-61 训练 / 62-70 验证）。
+2. **多窗口价格变化率**（10s/30s/60s/120s/300s 的 mid 变化率）是当前最有效特征族，Val 0.1214 → 0.1360。
+3. 余弦指标关注方向一致性 → 特征越贴近"未来方向"越重要。
+
+## 下一步
+
+- [ ] 深度学习序列模型（GRU/Transformer 编码三路数据，GPU 训练）
+- [ ] 特征筛选/归一化调优
+- [ ] 模型融合与交叉验证优化

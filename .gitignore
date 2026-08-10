@@ -1,0 +1,8 @@
+# 数据与特征（大文件不入库）
+data/
+features/
+output/*.csv
+__pycache__/
+*.pyc
+.DS_Store
+*.log
