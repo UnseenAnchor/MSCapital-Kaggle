@@ -36,6 +36,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 | 2 | 2026-08-10 | lgb v2 93 特征 (多窗口变化率) | 0.1360 | 0.116 | v1+v2 特征合并 |
 | 3 | 2026-08-11 | GRU 三路序列（GPU，15 epoch） | 0.1358 raw | - | RTX 4070，缓存序列训练 |
 | 4 | 2026-08-11 | LGB+GRU 融合 40%/60% | 0.1483/0.1489 | 0.122/0.123 | 融合显著提升，提交 ref 55419933/55419935/55419936 |
+| 5 | 2026-08-11 | LGB 50% + GRU 30% + Transformer 20% | **0.1503** | 待提交 | 三模型候选 `submission_blend_three_50_30_20.csv` |
 
 ## 关键经验
 
@@ -47,6 +48,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 
 - [x] 深度学习序列模型（GRU 三路编码，GPU 训练）
 - [x] LGB + GRU 模型融合（Val 0.136 → 0.149）
-- [ ] Transformer/TCN 序列模型
+- [x] Transformer 序列模型（Val 0.1285，作为多样性模型参与融合）
+- [ ] TCN 序列模型
 - [ ] 特征筛选/归一化调优
 - [ ] 跨月份交叉验证与最终模型重训
