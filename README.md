@@ -54,6 +54,9 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 9. v2 MultiStream多seed在middle由单seed约0.140–0.145提升到0.14622；但未充分收敛的late seed会拖累融合，成员必须按OOF质量筛选，不能机械平均。
 10. OOF稳健区间为旧LGB10% + 增强LGB30% + v2 60%；考虑Public泛化差距，下一候选只对已验证Public配方加入10%增强LGB。
 11. Micro-v3候选将Public 0.136提升到0.137，但与旧候选相关系数0.99846，增量上限有限；下一阶段应开发低相关强模型，不再做相邻权重扫点。
+12. 采用无拆月的LB代理CV（month 0–44训练、45–70验证）后，增强LGB得分0.13664，与Public 0.137高度接近，比late单折更有解释力。
+13. Top128 RealMLP（batch1024、16 epochs、8-member、train-only筛选）与增强LGB相关性约0.87–0.89；LGB60%+RealMLP40%在proxy/middle/late均提升，且提高最差月份。
+14. Top320 RealMLP代理CV仅0.13005，低于Top128，证明tabular神经网络同样需要控制特征维度。
 
 ## 下一步
 
@@ -69,4 +72,6 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 - [x] 增强 microprice/signed amount/new-cancel pressure 多窗口特征后的 LGB
 - [x] 三折增强LGB与两折融合权重稳定性验证
 - [ ] MultiStream v3 多 seed OOF（仅在成本/收益合理时继续）
-- [ ] 增强特征 RealMLP 与最终非负正则融合
+- [x] 增强特征 RealMLP：Top128、batch1024、16 epochs、8-member与多折验证
+- [x] 无拆月80万/46万LB代理CV及train-only特征筛选
+- [ ] v3 MultiStream或其他低相关强单模，继续缩小Top10差距

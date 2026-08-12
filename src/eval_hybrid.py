@@ -54,6 +54,13 @@ def main():
  for w in [.05,.10,.15,.20,.25,.30]:
   p=(1-w)*unit(public136)+w*micro
   print('public136 + micro',w,c(y,p))
+ # Reconstruct current Public-0.137 candidate, then add fixed RealMLP checkpoints.
+ public137=.9*unit(public136)+.1*micro
+ rz=np.load('output/realmlp_rolling_oof.npz');assert np.array_equal(rz['late_sample_id'],va.sample_id.to_numpy()[order]);real=np.mean([unit(rz[f'late_ep{e}']) for e in (6,9,11)],axis=0)
+ print('public137 reconstructed',c(y,public137),'realmlp',c(y,real),'corr',float(unit(public137)@unit(real)))
+ for w in [.05,.10,.15,.20,.25,.30,.35,.40]:
+  p=(1-w)*unit(public137)+w*unit(real)
+  print('public137 + realmlp',w,c(y,p))
  # blend robust existing 4-model unit candidate with v2 and v3 multi-scale streams
  base4=.1*models[0]+.2*models[1]+.2*models[3]+.5*models[4]
  for a in np.arange(0,1.01,.1):
