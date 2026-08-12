@@ -38,6 +38,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 | 4 | 2026-08-11 | LGB+GRU 融合 40%/60% | 0.1483/0.1489 | 0.122/0.123 | 融合显著提升，提交 ref 55419933/55419935/55419936 |
 | 5 | 2026-08-11 | LGB 50% + GRU 30% + Transformer 20% | **0.1503** | 待提交 | 三模型候选 `submission_blend_three_50_30_20.csv` |
 | 6 | 2026-08-11 | LGB 30% + GRU 30% + Transformer 10% + Hybrid 30% | **0.1548** | 0.128 | ref 55444499；Public 第76/107名 |
+| 7 | 2026-08-12 | Unit ensemble：LGB10+GRU20+Hybrid20+MultiStream-v2/v3各25 | late约0.166 | **0.136** | ref 55450450；Public 第42/107名，提升34名 |
 
 ## 关键经验
 
@@ -46,6 +47,8 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 3. 余弦指标关注方向一致性 → 特征越贴近"未来方向"越重要。
 4. 四模型融合 Public 从 0.125 提升到 0.128，方向有效，但 Val 0.1548 与 Public 0.128 相差约 0.027，单一验证区间仍有过拟合风险。
 5. 下一轮必须先做滚动月份验证，并拆分组件评估 Hybrid 的真实贡献，再决定是否上传。
+6. 高分辨率 v2/v3 MultiStream + unit-normalized ensemble 将 Public 0.128 提升到 0.136、排名76→42，证明结构与尺度修复有效。
+7. late 离线约0.166而Public仅0.136，仍有约0.030泛化差距；下一步不能继续按late单折调权，必须做多折OOF和成员归因。
 
 ## 下一步
 
