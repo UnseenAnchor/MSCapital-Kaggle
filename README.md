@@ -53,6 +53,10 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 - [x] LGB + GRU 模型融合（Val 0.136 → 0.149）
 - [x] Hybrid（GRU 序列 + 92 个 LGB 特征，Val 0.141）及四模型融合（Val 0.155）
 - [x] Transformer 序列模型（Val 0.1285，作为多样性模型参与融合）
-- [ ] TCN 序列模型
-- [ ] 特征筛选/归一化调优
-- [ ] 跨月份交叉验证与最终模型重训
+- [x] 高分辨率 MultiStream CNN–Transformer（v2 200/60 + v3 400/120）
+- [x] 修复序列时间方向与 unit-normalized 融合
+- [x] 滚动 LGB：配置、轮数、seed、Top-K、target clipping 审计
+- [x] Top10 技术路线审计：见 `TOP10_STRATEGY.md`
+- [ ] MultiStream v2/v3 多 seed OOF
+- [ ] 增强 OFI/EWM/microprice/signed amount 特征后的 LGB + RealMLP
+- [ ] 三折 OOF 非负融合权重与最终模型重训

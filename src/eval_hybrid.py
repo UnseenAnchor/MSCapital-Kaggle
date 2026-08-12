@@ -4,6 +4,7 @@ from train_transformer_cached import Net as TNet
 from train_hybrid_cached import DS,Net as HNet,load_tab
 
 def c(y,p):y=y-y.mean();p=p-p.mean();return float(np.dot(y,p)/(np.linalg.norm(y)*np.linalg.norm(p)+1e-12))
+def unit(p):p=p-p.mean();return p/(np.linalg.norm(p)+1e-12)
 def main():
  lab=pd.read_feather('data/train/label.feather');dfs=[lab]
  for n in ['market','order','transaction']:
@@ -24,7 +25,34 @@ def main():
  hdl=torch.utils.data.DataLoader(DS(m,o,x,tab,yy*SCALE_Y,vi),batch_size=BATCH*2,shuffle=False);q=HNet(len(tc)).to(DEVICE);q.load_state_dict(torch.load('output/hybrid_best.pt',map_location=DEVICE));q.eval();z=[]
  with torch.no_grad():
   for bm,bo,bx,bt,by in hdl:z.append(q(bm.to(DEVICE),bo.to(DEVICE),bx.to(DEVICE),bt.to(DEVICE)).cpu().numpy()/SCALE_Y)
- pred.append(np.concatenate(z));print('L/G/T/H',*[f'{c(y,z):.5f}' for z in [pl,*pred]])
+ pred.append(np.concatenate(z))
+ robust_z=np.load('output/rolling_lgb_preds.npz'); robust=.4*robust_z['late_base600']+.3*robust_z['late_cons600']+.3*robust_z['late_rand600']; robust=robust[order]
+ seed_z=np.load('output/rolling_lgb_seed_preds.npz'); seedavg=seed_z['late_avg3'][order]
+ print('L/G/T/H/RobustLGB/SeedAvg',*[f'{c(y,z):.5f}' for z in [pl,*pred,robust,seedavg]])
+ old4=.3*pl+.3*pred[0]+.1*pred[1]+.3*pred[2]
+ print('old four:',c(y,old4))
+ print('robust four:',c(y,.3*robust+.3*pred[0]+.1*pred[1]+.3*pred[2]))
+ print('seedavg four:',c(y,.3*seedavg+.3*pred[0]+.1*pred[1]+.3*pred[2]))
+ ms_z=np.load('output/multistream_val_preds.npz'); assert np.array_equal(ms_z['sample_id'],va.sample_id.to_numpy()[order]); ms=.5*ms_z['ep5']+.5*ms_z['ep8']
+ print('multistream checkpoint ensemble:',c(y,ms),'std',ms.std(),'old4 std',old4.std())
+ print('UNIT-NORMALIZED BLEND')
+ for a in np.arange(0,1.01,.1):print('old4 weight',round(a,1),c(y,a*unit(old4)+(1-a)*unit(ms)))
+ # coarse unit-normalized 5-model search: LGB, GRU, Transformer, Hybrid, MultiStream
+ models=[unit(pl),unit(pred[0]),unit(pred[1]),unit(pred[2]),unit(ms)];best5=[]
+ for a in np.arange(0,1.01,.1):
+  for b in np.arange(0,1.01-a,.1):
+   for d in np.arange(0,1.01-a-b,.1):
+    for e in np.arange(0,1.01-a-b-d,.1):
+     f=1-a-b-d-e;best5.append((c(y,a*models[0]+b*models[1]+d*models[2]+e*models[3]+f*models[4]),a,b,d,e,f))
+ print('best unit 5-model',sorted(best5,reverse=True)[:8])
+ v3z=np.load('output/multistream_v3_val_preds.npz'); assert np.array_equal(v3z['sample_id'],va.sample_id.to_numpy()[order]); v3=.5*unit(v3z['ep5'])+.5*unit(v3z['ep6'])
+ print('v3 unit checkpoint ensemble',c(y,v3))
+ # blend robust existing 4-model unit candidate with v2 and v3 multi-scale streams
+ base4=.1*models[0]+.2*models[1]+.2*models[3]+.5*models[4]
+ for a in np.arange(0,1.01,.1):
+  for b in np.arange(0,1.01-a,.1):
+   if abs((a+b)-.5)<1e-8 or a in [0,.2,.4,.6,.8,1.0]: print('multi-scale weights base/v2/v3',round(a,1),round(b,1),round(1-a-b,1),c(y,a*unit(base4)+b*unit(ms)+(1-a-b)*unit(v3)))
+ for rr in [.1,.2,.3,.5,1.0]: print('robust replacement',rr,c(y,(.3*(1-rr))*pl+(.3*rr)*robust+.3*pred[0]+.1*pred[1]+.3*pred[2]))
  # Add H to fixed 3-way: search coarse simplex, reporting top
  best=[]
  for a in np.arange(0,1.01,.1):
