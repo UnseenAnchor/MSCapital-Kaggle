@@ -39,6 +39,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 | 5 | 2026-08-11 | LGB 50% + GRU 30% + Transformer 20% | **0.1503** | 待提交 | 三模型候选 `submission_blend_three_50_30_20.csv` |
 | 6 | 2026-08-11 | LGB 30% + GRU 30% + Transformer 10% + Hybrid 30% | **0.1548** | 0.128 | ref 55444499；Public 第76/107名 |
 | 7 | 2026-08-12 | Unit ensemble：LGB10+GRU20+Hybrid20+MultiStream-v2/v3各25 | late约0.166 | **0.136** | ref 55450450；Public 第42/107名，提升34名 |
+| 8 | 2026-08-12 | Public-0.136配方90% + 434维Micro-v3 LGB 10% | late 0.16969 | **0.137** | ref 55458320；Public 第41/108名 |
 
 ## 关键经验
 
@@ -52,6 +53,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 8. 434维增强LGB（旧92 + 342维microstructure）在early/middle/late三折分别为0.13091/0.13701/0.14638；与旧LGB单位融合后三折均继续提升。
 9. v2 MultiStream多seed在middle由单seed约0.140–0.145提升到0.14622；但未充分收敛的late seed会拖累融合，成员必须按OOF质量筛选，不能机械平均。
 10. OOF稳健区间为旧LGB10% + 增强LGB30% + v2 60%；考虑Public泛化差距，下一候选只对已验证Public配方加入10%增强LGB。
+11. Micro-v3候选将Public 0.136提升到0.137，但与旧候选相关系数0.99846，增量上限有限；下一阶段应开发低相关强模型，不再做相邻权重扫点。
 
 ## 下一步
 
