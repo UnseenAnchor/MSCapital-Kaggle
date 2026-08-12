@@ -49,6 +49,9 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 5. 下一轮必须先做滚动月份验证，并拆分组件评估 Hybrid 的真实贡献，再决定是否上传。
 6. 高分辨率 v2/v3 MultiStream + unit-normalized ensemble 将 Public 0.128 提升到 0.136、排名76→42，证明结构与尺度修复有效。
 7. late 离线约0.166而Public仅0.136，仍有约0.030泛化差距；下一步不能继续按late单折调权，必须做多折OOF和成员归因。
+8. 434维增强LGB（旧92 + 342维microstructure）在early/middle/late三折分别为0.13091/0.13701/0.14638；与旧LGB单位融合后三折均继续提升。
+9. v2 MultiStream多seed在middle由单seed约0.140–0.145提升到0.14622；但未充分收敛的late seed会拖累融合，成员必须按OOF质量筛选，不能机械平均。
+10. OOF稳健区间为旧LGB10% + 增强LGB30% + v2 60%；考虑Public泛化差距，下一候选只对已验证Public配方加入10%增强LGB。
 
 ## 下一步
 
@@ -60,6 +63,8 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 - [x] 修复序列时间方向与 unit-normalized 融合
 - [x] 滚动 LGB：配置、轮数、seed、Top-K、target clipping 审计
 - [x] Top10 技术路线审计：见 `TOP10_STRATEGY.md`
-- [ ] MultiStream v2/v3 多 seed OOF
-- [ ] 增强 OFI/EWM/microprice/signed amount 特征后的 LGB + RealMLP
-- [ ] 三折 OOF 非负融合权重与最终模型重训
+- [x] MultiStream v2 多 seed middle/late OOF与弱成员淘汰
+- [x] 增强 microprice/signed amount/new-cancel pressure 多窗口特征后的 LGB
+- [x] 三折增强LGB与两折融合权重稳定性验证
+- [ ] MultiStream v3 多 seed OOF（仅在成本/收益合理时继续）
+- [ ] 增强特征 RealMLP 与最终非负正则融合

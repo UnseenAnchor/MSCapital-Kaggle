@@ -47,6 +47,13 @@ def main():
  print('best unit 5-model',sorted(best5,reverse=True)[:8])
  v3z=np.load('output/multistream_v3_val_preds.npz'); assert np.array_equal(v3z['sample_id'],va.sample_id.to_numpy()[order]); v3=.5*unit(v3z['ep5'])+.5*unit(v3z['ep6'])
  print('v3 unit checkpoint ensemble',c(y,v3))
+ # Exact Public-0.136 candidate and conservative enhanced-LGB additions.
+ micro_z=np.load('output/rolling_micro_lgb_preds.npz'); micro=unit(micro_z['late_combined'][order])
+ public136=.1*models[0]+.2*models[1]+.2*models[3]+.25*unit(ms)+.25*v3
+ print('public136 reconstructed',c(y,public136))
+ for w in [.05,.10,.15,.20,.25,.30]:
+  p=(1-w)*unit(public136)+w*micro
+  print('public136 + micro',w,c(y,p))
  # blend robust existing 4-model unit candidate with v2 and v3 multi-scale streams
  base4=.1*models[0]+.2*models[1]+.2*models[3]+.5*models[4]
  for a in np.arange(0,1.01,.1):
