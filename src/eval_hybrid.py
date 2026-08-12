@@ -61,6 +61,17 @@ def main():
  for w in [.05,.10,.15,.20,.25,.30,.35,.40]:
   p=(1-w)*unit(public137)+w*unit(real)
   print('public137 + realmlp',w,c(y,p))
+ public138=.95*unit(public137)+.05*unit(real)
+ # New v3 effective-batch-1024 model, validated on proxy/middle/late.
+ nvz=np.load('output/multistream_v3_late_eff1024_oof.npz');assert np.array_equal(nvz['sample_id'],va.sample_id.to_numpy()[order]);newv3=unit(nvz['ens4_5_6']);newv3_alt=unit(nvz['ens5_6_8'])
+ print('public138 reconstructed',c(y,public138),'newv3',c(y,newv3),'newv3_alt',c(y,newv3_alt),'corr old/new',float(unit(v3)@newv3),'corr public/new',float(unit(public138)@newv3))
+ for w in [.05,.10,.15,.20,.25,.30,.35,.40]:print('public138 + newv3',w,c(y,(1-w)*unit(public138)+w*newv3))
+ # Replace or mix the old-v3 25% slot before applying the proven micro/RealMLP increments.
+ for old_share in [0,.25,.5,.75,1.0]:
+  v3slot=old_share*unit(v3)+(1-old_share)*newv3
+  base=.1*models[0]+.2*models[1]+.2*models[3]+.25*unit(ms)+.25*unit(v3slot)
+  cand137=.9*unit(base)+.1*micro;cand138=.95*unit(cand137)+.05*unit(real)
+  print('v3slot old/new',old_share,1-old_share,'base',c(y,base),'final',c(y,cand138))
  # blend robust existing 4-model unit candidate with v2 and v3 multi-scale streams
  base4=.1*models[0]+.2*models[1]+.2*models[3]+.5*models[4]
  for a in np.arange(0,1.01,.1):

@@ -59,6 +59,9 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 13. Top128 RealMLP（batch1024、16 epochs、8-member、train-only筛选）与增强LGB相关性约0.87–0.89；LGB60%+RealMLP40%在proxy/middle/late均提升，且提高最差月份。
 14. Top320 RealMLP代理CV仅0.13005，低于Top128，证明tabular神经网络同样需要控制特征维度。
 15. RealMLP 5%候选将Public 0.137提升到0.138；代理CV成功识别了late单折几乎看不到的测试状态增益，后续应提升RealMLP单模而非扫相邻融合权重。
+16. RealMLP seed13只轻微改善middle但损害late，seed77更弱；多seed不是无条件有效，二者均未进入全量候选。
+17. 新v3 MultiStream采用micro-batch128×梯度累积8=effective batch1024、12 epochs，在proxy/middle/late的LGB40+v3 60融合分别达到0.15419/0.15299/0.16575以上，并显著提高最差月份。
+18. 新v3与当前Public候选测试相关性0.885，具备比Micro-LGB更强的独立增量；下一候选保守加入20%。
 
 ## 下一步
 
@@ -76,4 +79,6 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 - [ ] MultiStream v3 多 seed OOF（仅在成本/收益合理时继续）
 - [x] 增强特征 RealMLP：Top128、batch1024、16 epochs、8-member与多折验证
 - [x] 无拆月80万/46万LB代理CV及train-only特征筛选
-- [ ] v3 MultiStream或其他低相关强单模，继续缩小Top10差距
+- [x] v3 MultiStream effective-batch1024、12 epochs及proxy/middle/late共同验证
+- [x] RealMLP多seed审计与弱seed淘汰
+- [ ] 新v3候选Public验证；获用户批准前不提交

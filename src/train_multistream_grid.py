@@ -9,8 +9,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 ROOT=os.environ.get('GRID_ROOT','features/grid_v2'); GRID_VERSION=os.environ.get('GRID_VERSION','v2'); DEVICE=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 10; BATCH=int(os.environ.get('BATCH','256'))
+EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 10; BATCH=int(os.environ.get('BATCH','256')); ACCUM=int(os.environ.get('ACCUM_STEPS','1'))
 TRAIN_END=int(os.environ.get('TRAIN_END','62')); VALID_END=int(os.environ.get('VALID_END','71')); SEED=int(os.environ.get('SEED','42')); OUT_PREFIX=os.environ.get('OUT_PREFIX','multistream'); D_MODEL=int(os.environ.get('D_MODEL','64')); N_LAYERS=int(os.environ.get('N_LAYERS','2')); LR=float(os.environ.get('LR','0.001')); LAMBDA_COS=float(os.environ.get('LAMBDA_COS','1.0'))
+RESUME=os.environ.get('RESUME_CHECKPOINT','');START_EPOCH=int(os.environ.get('START_EPOCH','0'))
 M_LEN=int(os.environ.get('MARKET_LEN','200')); F_LEN=int(os.environ.get('FLOW_LEN','60')); M_CH,T_CH,O_CH=11,7,10
 
 def paths(split):
@@ -64,17 +65,39 @@ def pred(q,dl):
  return np.concatenate(z),np.concatenate(yy) if yy else None
 def main():
  random.seed(SEED);np.random.seed(SEED);torch.manual_seed(SEED);lab=pd.read_feather('data/train/label.feather').sort_values('sample_id');n=len(lab);A=arrays('train',n);mo=lab.month.to_numpy();y=lab.target.to_numpy(np.float32);tr=np.flatnonzero(mo<TRAIN_END);va=np.flatnonzero((mo>=TRAIN_END)&(mo<VALID_END));norm=norm_stats(A,tr);np.savez(f'{ROOT}/norm_stats_{OUT_PREFIX}.npz',**{f'{k}_{z}':v[i] for k,v in norm.items() for i,z in enumerate(['mean','std'])})
- tl=torch.utils.data.DataLoader(DS(A,tr,norm,y),BATCH,shuffle=True,num_workers=0,pin_memory=True,drop_last=True);vl=torch.utils.data.DataLoader(DS(A,va,norm,y),BATCH*2,shuffle=False,num_workers=0,pin_memory=True);q=Net().to(DEVICE);opt=torch.optim.AdamW(q.parameters(),LR,weight_decay=1e-4);sch=torch.optim.lr_scheduler.CosineAnnealingLR(opt,EPOCHS);sc=torch.cuda.amp.GradScaler(enabled=DEVICE.type=='cuda');best=-1
- print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, batch={BATCH}, train={len(tr)}, val={len(va)}',flush=True)
- for ep in range(EPOCHS):
-  q.train();tot=nseen=0;st=time.time()
-  for m,t,o,yy in tl:
-   m,t,o,yy=[z.to(DEVICE,non_blocking=True) for z in (m,t,o,yy)];opt.zero_grad(set_to_none=True)
+ tl=torch.utils.data.DataLoader(DS(A,tr,norm,y),BATCH,shuffle=True,num_workers=0,pin_memory=True,drop_last=True);vl=torch.utils.data.DataLoader(DS(A,va,norm,y),BATCH*2,shuffle=False,num_workers=0,pin_memory=True);q=Net().to(DEVICE);opt=torch.optim.AdamW(q.parameters(),LR,weight_decay=1e-4);sc=torch.cuda.amp.GradScaler(enabled=DEVICE.type=='cuda');best=-1;start_epoch=START_EPOCH
+ if RESUME:
+  state=torch.load(RESUME,map_location=DEVICE)
+  if isinstance(state,dict) and 'model' in state:
+   q.load_state_dict(state['model']);opt.load_state_dict(state['optimizer']);sc.load_state_dict(state['scaler']);start_epoch=int(state.get('epoch',start_epoch))
+  else:q.load_state_dict(state)
+ sch=torch.optim.lr_scheduler.CosineAnnealingLR(opt,EPOCHS)
+ for _ in range(start_epoch):sch.step()
+ print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
+ for ep in range(start_epoch,EPOCHS):
+  q.train();tot=nseen=0;st=time.time();opt.zero_grad(set_to_none=True);pending=0
+  for bi,(m,t,o,yy) in enumerate(tl):
+   m,t,o,yy=[z.to(DEVICE,non_blocking=True) for z in (m,t,o,yy)]
    with torch.cuda.amp.autocast(enabled=DEVICE.type=='cuda'):loss=lossfn(q(m,t,o),yy)
-   if not torch.isfinite(loss):continue
-   sc.scale(loss).backward();sc.unscale_(opt);nn.utils.clip_grad_norm_(q.parameters(),1);sc.step(opt);sc.update();tot+=loss.item()*len(yy);nseen+=len(yy)
-  sch.step();p,yt=pred(q,vl);raw=cos(yt,p);cen=cos(yt,p,True);print(f'epoch {ep+1}/{EPOCHS}: loss={tot/nseen:.5f}, raw={raw:.5f}, centered={cen:.5f}, sec={time.time()-st:.0f}',flush=True)
+   if not torch.isfinite(loss):
+    opt.zero_grad(set_to_none=True);pending=0;continue
+   sc.scale(loss/ACCUM).backward();pending+=1;tot+=loss.item()*len(yy);nseen+=len(yy)
+   if pending==ACCUM:
+    sc.unscale_(opt);nn.utils.clip_grad_norm_(q.parameters(),1);sc.step(opt);sc.update();opt.zero_grad(set_to_none=True);pending=0
+  if pending:
+   # Correct the final partial accumulation to preserve gradient magnitude.
+   scale=ACCUM/pending
+   for param in q.parameters():
+    if param.grad is not None:param.grad.mul_(scale)
+   sc.unscale_(opt);nn.utils.clip_grad_norm_(q.parameters(),1);sc.step(opt);sc.update();opt.zero_grad(set_to_none=True)
+  sch.step()
+  if len(va):
+   p,yt=pred(q,vl);raw=cos(yt,p);cen=cos(yt,p,True);metrics=f'raw={raw:.5f}, centered={cen:.5f}'
+  else:
+   raw=cen=float('nan');metrics='full_data_no_validation'
+  print(f'epoch {ep+1}/{EPOCHS}: loss={tot/nseen:.5f}, {metrics}, sec={time.time()-st:.0f}',flush=True)
   torch.save(q.state_dict(),f'output/{OUT_PREFIX}_ep{ep+1}.pt')
-  if raw>best:best=raw;torch.save(q.state_dict(),f'output/{OUT_PREFIX}_best.pt')
+  torch.save({'model':q.state_dict(),'optimizer':opt.state_dict(),'scaler':sc.state_dict(),'epoch':ep+1},f'output/{OUT_PREFIX}_train_state.pt')
+  if len(va) and raw>best:best=raw;torch.save(q.state_dict(),f'output/{OUT_PREFIX}_best.pt')
  print('best_raw=',best)
 if __name__=='__main__':main()
