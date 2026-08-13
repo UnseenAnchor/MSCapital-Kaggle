@@ -42,7 +42,8 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 | 8 | 2026-08-12 | Public-0.136配方90% + 434维Micro-v3 LGB 10% | late 0.16969 | **0.137** | ref 55458320；Public 第41/108名 |
 | 9 | 2026-08-12 | Public-0.137配方95% + ProxyCV RealMLP-v4 5% | late 0.16977 | **0.138** | ref 55459787；Public 第41/108名，领先0.137分组 |
 | 10 | 2026-08-13 | Public-0.138配方80% + v3 effective-batch1024 20% | late 0.17087 | **0.140** | ref 55469774；进入0.140分组 |
-| 11 | 2026-08-13 | v3成员替换为seed42 80% + seed13 20% | late 0.17101 | **0.140** | ref 55482231；第43/112名，未跨三位小数阈值 |
+| 11 | 2026-08-13 | v3成员替换为seed42 80% + seed13 20% | late 0.17101 | **0.140** | ref 55482231；未跨三位小数阈值 |
+| 12 | 2026-08-13 | Public-0.138基础80% + 原v3 8% + 时间对齐联合流v3 12% | late 0.17192 | **0.140** | ref 55487734；第40/115名，Public无可见增量 |
 
 ## 关键经验
 
@@ -68,6 +69,8 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 20. v3 seed13通过严格逐级闸门；固定4/5/6 checkpoint、seed42 80%+seed13 20%在proxy/middle/late均同时提高全局、月均和最差月。
 21. 多seed只替换Public-0.140候选中的v3成员，late重建0.170865→0.171012；候选变化很小但归因清晰。
 22. 多seedPublic仍显示0.140，说明+0.0001级离线增益不足以支持提交；保留多seed作内部降方差，但停止相邻seed权重实验。
+23. RAM整批索引、GPU端归一化与physical256×accum4将端到端吞吐从约1700提升到约4040 samples/s（2.36倍），v3训练每轮降至约5分钟。
+24. 时间对齐联合流在Proxy/Middle/Late和完整late重建均显著提升，但Public仍为0.140；说明现有历史CV仍不能完全代表隐藏测试期，停止该架构的相邻权重搜索。
 
 ## 下一步
 

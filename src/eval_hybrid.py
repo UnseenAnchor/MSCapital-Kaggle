@@ -70,6 +70,9 @@ def main():
  s13z=np.load('output/multistream_v3_late_eff1024_s13_oof.npz');assert np.array_equal(s13z['sample_id'],va.sample_id.to_numpy()[order]);s13v3=unit(s13z['ens4_5_6']);multiv3=.8*newv3+.2*s13v3
  public140=.8*unit(public138)+.2*newv3;multicand=.8*unit(public138)+.2*unit(multiv3)
  print('public140 reconstructed',c(y,public140),'multiseed replacement',c(y,multicand),'delta',c(y,multicand)-c(y,public140),'v3 seed corr',float(newv3@s13v3))
+ # Joint aligned-stream architecture: fixed 40% base-v3 + 60% joint-v3 inside the 20% v3 slot.
+ jz=np.load('output/joint_v3_late_fast_oof.npz');assert np.array_equal(jz['sample_id'],va.sample_id.to_numpy()[order]);joint=unit(jz['ens4_5_6']);v3joint=.4*newv3+.6*joint;jointcand=.8*unit(public138)+.2*unit(v3joint)
+ print('joint-v3 fixed mix',c(y,v3joint),'corr base/joint',float(newv3@joint),'full candidate',c(y,jointcand),'delta_vs_public140',c(y,jointcand)-c(y,public140))
  # Replace or mix the old-v3 25% slot before applying the proven micro/RealMLP increments.
  for old_share in [0,.25,.5,.75,1.0]:
   v3slot=old_share*unit(v3)+(1-old_share)*newv3
