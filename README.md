@@ -64,6 +64,8 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 17. 新v3 MultiStream采用micro-batch128×梯度累积8=effective batch1024、12 epochs，在proxy/middle/late的LGB40+v3 60融合分别达到0.15419/0.15299/0.16575以上，并显著提高最差月份。
 18. 新v3与当前Public候选测试相关性0.885，具备比Micro-LGB更强的独立增量；下一候选保守加入20%。
 19. v3 20%候选将Public从0.138提升到0.140，三套CV再次正确预测Public方向；下一步应继续增强独立单模，不提交25%/30%相邻权重扫点。
+20. v3 seed13通过严格逐级闸门；固定4/5/6 checkpoint、seed42 80%+seed13 20%在proxy/middle/late均同时提高全局、月均和最差月。
+21. 多seed只替换Public-0.140候选中的v3成员，late重建0.170865→0.171012；候选变化很小但归因清晰。
 
 ## 下一步
 
@@ -83,4 +85,6 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 - [x] 无拆月80万/46万LB代理CV及train-only特征筛选
 - [x] v3 MultiStream effective-batch1024、12 epochs及proxy/middle/late共同验证
 - [x] RealMLP多seed审计与弱seed淘汰
-- [ ] 新v3候选Public验证；获用户批准前不提交
+- [x] 新v3候选Public验证：0.138 → 0.140
+- [x] v3第二seed逐级Proxy/Middle/Late验证与全量训练
+- [ ] 多seed候选Public验证；获用户批准前不提交

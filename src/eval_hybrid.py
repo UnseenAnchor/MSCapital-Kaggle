@@ -66,6 +66,10 @@ def main():
  nvz=np.load('output/multistream_v3_late_eff1024_oof.npz');assert np.array_equal(nvz['sample_id'],va.sample_id.to_numpy()[order]);newv3=unit(nvz['ens4_5_6']);newv3_alt=unit(nvz['ens5_6_8'])
  print('public138 reconstructed',c(y,public138),'newv3',c(y,newv3),'newv3_alt',c(y,newv3_alt),'corr old/new',float(unit(v3)@newv3),'corr public/new',float(unit(public138)@newv3))
  for w in [.05,.10,.15,.20,.25,.30,.35,.40]:print('public138 + newv3',w,c(y,(1-w)*unit(public138)+w*newv3))
+ # Exact Public-0.140 reconstruction and pre-registered seed42 80% + seed13 20% replacement.
+ s13z=np.load('output/multistream_v3_late_eff1024_s13_oof.npz');assert np.array_equal(s13z['sample_id'],va.sample_id.to_numpy()[order]);s13v3=unit(s13z['ens4_5_6']);multiv3=.8*newv3+.2*s13v3
+ public140=.8*unit(public138)+.2*newv3;multicand=.8*unit(public138)+.2*unit(multiv3)
+ print('public140 reconstructed',c(y,public140),'multiseed replacement',c(y,multicand),'delta',c(y,multicand)-c(y,public140),'v3 seed corr',float(newv3@s13v3))
  # Replace or mix the old-v3 25% slot before applying the proven micro/RealMLP increments.
  for old_share in [0,.25,.5,.75,1.0]:
   v3slot=old_share*unit(v3)+(1-old_share)*newv3
