@@ -41,7 +41,8 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 | 7 | 2026-08-12 | Unit ensemble：LGB10+GRU20+Hybrid20+MultiStream-v2/v3各25 | late约0.166 | **0.136** | ref 55450450；Public 第42/107名，提升34名 |
 | 8 | 2026-08-12 | Public-0.136配方90% + 434维Micro-v3 LGB 10% | late 0.16969 | **0.137** | ref 55458320；Public 第41/108名 |
 | 9 | 2026-08-12 | Public-0.137配方95% + ProxyCV RealMLP-v4 5% | late 0.16977 | **0.138** | ref 55459787；Public 第41/108名，领先0.137分组 |
-| 10 | 2026-08-13 | Public-0.138配方80% + v3 effective-batch1024 20% | late 0.17087 | **0.140** | ref 55469774；第42/109名，进入0.140分组 |
+| 10 | 2026-08-13 | Public-0.138配方80% + v3 effective-batch1024 20% | late 0.17087 | **0.140** | ref 55469774；进入0.140分组 |
+| 11 | 2026-08-13 | v3成员替换为seed42 80% + seed13 20% | late 0.17101 | **0.140** | ref 55482231；第43/112名，未跨三位小数阈值 |
 
 ## 关键经验
 
@@ -66,6 +67,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 19. v3 20%候选将Public从0.138提升到0.140，三套CV再次正确预测Public方向；下一步应继续增强独立单模，不提交25%/30%相邻权重扫点。
 20. v3 seed13通过严格逐级闸门；固定4/5/6 checkpoint、seed42 80%+seed13 20%在proxy/middle/late均同时提高全局、月均和最差月。
 21. 多seed只替换Public-0.140候选中的v3成员，late重建0.170865→0.171012；候选变化很小但归因清晰。
+22. 多seedPublic仍显示0.140，说明+0.0001级离线增益不足以支持提交；保留多seed作内部降方差，但停止相邻seed权重实验。
 
 ## 下一步
 
