@@ -41,6 +41,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 | 7 | 2026-08-12 | Unit ensemble：LGB10+GRU20+Hybrid20+MultiStream-v2/v3各25 | late约0.166 | **0.136** | ref 55450450；Public 第42/107名，提升34名 |
 | 8 | 2026-08-12 | Public-0.136配方90% + 434维Micro-v3 LGB 10% | late 0.16969 | **0.137** | ref 55458320；Public 第41/108名 |
 | 9 | 2026-08-12 | Public-0.137配方95% + ProxyCV RealMLP-v4 5% | late 0.16977 | **0.138** | ref 55459787；Public 第41/108名，领先0.137分组 |
+| 10 | 2026-08-13 | Public-0.138配方80% + v3 effective-batch1024 20% | late 0.17087 | **0.140** | ref 55469774；第42/109名，进入0.140分组 |
 
 ## 关键经验
 
@@ -62,6 +63,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 16. RealMLP seed13只轻微改善middle但损害late，seed77更弱；多seed不是无条件有效，二者均未进入全量候选。
 17. 新v3 MultiStream采用micro-batch128×梯度累积8=effective batch1024、12 epochs，在proxy/middle/late的LGB40+v3 60融合分别达到0.15419/0.15299/0.16575以上，并显著提高最差月份。
 18. 新v3与当前Public候选测试相关性0.885，具备比Micro-LGB更强的独立增量；下一候选保守加入20%。
+19. v3 20%候选将Public从0.138提升到0.140，三套CV再次正确预测Public方向；下一步应继续增强独立单模，不提交25%/30%相邻权重扫点。
 
 ## 下一步
 
