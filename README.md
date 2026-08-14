@@ -81,6 +81,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 27. 40/60公开锚点融合Public实测0.144，验证低相关分母收益；不扫30/70或50/50等相邻权重，下一步需寻找第三个低相关强锚点。
 28. v9_big诊断单模Proxy 0.14591但Public仅0.129；与最佳候选相关性0.8875仍不足以补偿强度差，理论最优融合仅增约0.000023，停止该架构族。
 29. 公开LB0.142拆解为ens5 Public 0.136与v10 Public 0.129；二者相关性0.7526带来显著分母收益，但相对当前0.144的三端点重优化仅预计+0.000008，不提交。
+30. 以嵌套时间切分训练Residual-LGB、Residual-RealMLP和Residual CNN–Transformer；序列残差在三折均为正，但Late完整候选仅+0.000026且最差月下降，现有特征空间残差基本耗尽。
 
 ## 下一步
 
