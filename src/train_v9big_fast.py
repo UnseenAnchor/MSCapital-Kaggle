@@ -5,7 +5,7 @@ import numpy as np,pandas as pd,torch
 import torch.nn.functional as F
 sys.path.insert(0,str(Path('research/lb0142').resolve()))
 from lb0142.models_v9 import GridCfg,MultiStreamModel,cosine_init_scale
-DEVICE=torch.device('cuda' if torch.cuda.is_available() else 'cpu');ROOT='features/grid_v2';VER='v2';ML=200;FL=60;BS=int(os.environ.get('BATCH','256'));ACC=int(os.environ.get('ACCUM_STEPS','4'));EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 12;PREFIX=os.environ.get('OUT_PREFIX','v9big_proxy_fast');SEED=42;TRAIN_END=int(os.environ.get('TRAIN_END','45'));VALID_END=int(os.environ.get('VALID_END','71'))
+DEVICE=torch.device('cuda' if torch.cuda.is_available() else 'cpu');ROOT='features/grid_v2';VER='v2';ML=200;FL=60;BS=int(os.environ.get('BATCH','256'));ACC=int(os.environ.get('ACCUM_STEPS','4'));EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 12;PREFIX=os.environ.get('OUT_PREFIX','v9big_proxy_fast');SEED=42;TRAIN_END=int(os.environ.get('TRAIN_END','45'));VALID_END=int(os.environ.get('VALID_END','71'));FULL_TRAIN=os.environ.get('FULL_TRAIN','0')=='1'
 CFG=GridCfg(d_model=96,n_layers=3,cnn_channels=96,market_len=ML,flow_len=FL,batch_size=BS,num_workers=0)
 torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
@@ -54,7 +54,7 @@ def predict(model,A,idx,y,prep):
   po.append(p.float().cpu().numpy());yo.append(yy.cpu().numpy())
  return np.concatenate(po),np.concatenate(yo)
 def main():
- np.random.seed(SEED);torch.manual_seed(SEED);lab=pd.read_feather('data/train/label.feather').sort_values('sample_id').reset_index(drop=True);mo=lab.month.to_numpy();y=lab.target.to_numpy('f4');tr=np.flatnonzero(mo<TRAIN_END);va=np.flatnonzero((mo>=TRAIN_END)&(mo<VALID_END));A=arrays(len(lab));norm=norm_stats(A,tr);np.savez(f'output/{PREFIX}_norm.npz',**{f'{k}_{s}':v[i] for k,v in norm.items() for i,s in enumerate(['mean','std'])});A=load_ram(A);prep=Prep(norm);model=MultiStreamModel(CFG).to(DEVICE);cosine_init_scale(model)
+ np.random.seed(SEED);torch.manual_seed(SEED);lab=pd.read_feather('data/train/label.feather').sort_values('sample_id').reset_index(drop=True);mo=lab.month.to_numpy();y=lab.target.to_numpy('f4');tr=np.arange(len(lab)) if FULL_TRAIN else np.flatnonzero(mo<TRAIN_END);va=np.array([],dtype=np.int64) if FULL_TRAIN else np.flatnonzero((mo>=TRAIN_END)&(mo<VALID_END));A=arrays(len(lab));norm=norm_stats(A,tr);np.savez(f'output/{PREFIX}_norm.npz',**{f'{k}_{s}':v[i] for k,v in norm.items() for i,s in enumerate(['mean','std'])});A=load_ram(A);prep=Prep(norm);model=MultiStreamModel(CFG).to(DEVICE);cosine_init_scale(model)
  try:opt=torch.optim.AdamW(model.parameters(),lr=1e-3,weight_decay=1e-4,fused=True)
  except TypeError:opt=torch.optim.AdamW(model.parameters(),lr=1e-3,weight_decay=1e-4)
  sched=torch.optim.lr_scheduler.CosineAnnealingLR(opt,EPOCHS);scaler=torch.cuda.amp.GradScaler(enabled=DEVICE.type=='cuda');print('model',sum(p.numel() for p in model.parameters())/1e6,'M train',len(tr),'val',len(va),'batch',BS,'accum',ACC,'effective',BS*ACC,flush=True)
@@ -71,5 +71,10 @@ def main():
    for p in model.parameters():
     if p.grad is not None:p.grad.mul_(ACC/pending)
    scaler.unscale_(opt);torch.nn.utils.clip_grad_norm_(model.parameters(),1);scaler.step(opt);scaler.update();opt.zero_grad(set_to_none=True)
-  sched.step();pv,yv=predict(model,A,va,y,prep);score=cosine(yv,pv);print(f'epoch {ep}/{EPOCHS} loss={tot/seen:.5f} proxy={score:.6f} sec={time.time()-t:.0f}',flush=True);torch.save(model.state_dict(),f'output/{PREFIX}_ep{ep}.pt');np.savez(f'output/{PREFIX}_ep{ep}_oof.npz',sample_id=lab.sample_id.to_numpy()[va],target=yv,month=mo[va],prediction=pv)
+  sched.step()
+  if len(va):
+   pv,yv=predict(model,A,va,y,prep);score=cosine(yv,pv);metrics=f'proxy={score:.6f}'
+  else:metrics='full_data_no_validation'
+  print(f'epoch {ep}/{EPOCHS} loss={tot/seen:.5f} {metrics} sec={time.time()-t:.0f}',flush=True);torch.save(model.state_dict(),f'output/{PREFIX}_ep{ep}.pt')
+  if len(va):np.savez(f'output/{PREFIX}_ep{ep}_oof.npz',sample_id=lab.sample_id.to_numpy()[va],target=yv,month=mo[va],prediction=pv)
 if __name__=='__main__':main()
