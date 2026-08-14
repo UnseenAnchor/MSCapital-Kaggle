@@ -12,6 +12,7 @@ ROOT=os.environ.get('GRID_ROOT','features/grid_v2'); GRID_VERSION=os.environ.get
 EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 10; BATCH=int(os.environ.get('BATCH','256')); ACCUM=int(os.environ.get('ACCUM_STEPS','1'))
 TRAIN_END=int(os.environ.get('TRAIN_END','62')); VALID_END=int(os.environ.get('VALID_END','71')); SEED=int(os.environ.get('SEED','42')); OUT_PREFIX=os.environ.get('OUT_PREFIX','multistream'); D_MODEL=int(os.environ.get('D_MODEL','64')); N_LAYERS=int(os.environ.get('N_LAYERS','2')); LR=float(os.environ.get('LR','0.001')); LAMBDA_COS=float(os.environ.get('LAMBDA_COS','1.0'))
 RESUME=os.environ.get('RESUME_CHECKPOINT','');START_EPOCH=int(os.environ.get('START_EPOCH','0'));RAM_BATCHED=os.environ.get('RAM_BATCHED','0')=='1'
+DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'))
 M_LEN=int(os.environ.get('MARKET_LEN','200')); F_LEN=int(os.environ.get('FLOW_LEN','60')); M_CH,T_CH,O_CH=11,7,10;VARIANT=os.environ.get('MODEL_VARIANT','base')
 torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
@@ -36,9 +37,11 @@ class GPUBatchPrep:
  def one(self,k,x):
   z=torch.from_numpy(x).to(DEVICE);pad=z.abs().sum(-1)==0;mu,sd=self.norm[k];z=torch.nan_to_num(torch.clamp((z.float()-mu)/sd,-8,8),nan=0.,posinf=8.,neginf=-8.);z[pad]=0;return z.transpose(1,2)
  def batch(self,b):return self.one('market',b[0]),self.one('tx',b[1]),self.one('order',b[2]),torch.from_numpy(b[3]).to(DEVICE)
-def ram_batches(A,indices,y,bs,shuffle,seed,maxq=3,drop_last=False):
- idx=np.asarray(indices).copy()
- if shuffle:np.random.default_rng(seed).shuffle(idx)
+def ram_batches(A,indices,y,bs,shuffle,seed,maxq=3,drop_last=False,sample_weights=None):
+ idx=np.asarray(indices).copy();rng=np.random.default_rng(seed)
+ if sample_weights is not None:
+  prob=np.asarray(sample_weights,dtype=np.float64)[idx];prob/=prob.sum();idx=rng.choice(idx,size=len(idx),replace=True,p=prob)
+ elif shuffle:rng.shuffle(idx)
  q=queue.Queue(maxq);stop=object()
  def work():
   try:
@@ -76,16 +79,19 @@ class Stream(nn.Module):
 class Net(nn.Module):
  def __init__(self,d=None):
   super().__init__();d=d or D_MODEL;self.variant=VARIANT;self.m=Stream(M_CH,M_LEN,d,N_LAYERS);self.t=Stream(T_CH,F_LEN,d,max(1,N_LAYERS-1));self.o=Stream(O_CH,F_LEN,d,max(1,N_LAYERS-1));ntok=3
-  if self.variant=='joint':
+  if self.variant in ('joint','joint_inv'):
    # 59 channels: aligned raw streams, first differences, and activity masks.
    self.j=Stream((M_CH+T_CH+O_CH)*2+3,F_LEN,d,N_LAYERS);ntok=4
   el=nn.TransformerEncoderLayer(d,4,d*4,.1,'gelu',batch_first=True,norm_first=True);self.cross=nn.TransformerEncoder(el,1);self.typ=nn.Parameter(torch.randn(1,ntok,d)*.02);self.h=nn.Sequential(nn.Linear(d*ntok*2,d*2),nn.GELU(),nn.Dropout(.1),nn.Linear(d*2,d),nn.GELU(),nn.Linear(d,1))
+ def temporal_instance_norm(self,x,mask):
+  w=mask.to(x.dtype);den=w.sum(-1,keepdim=True).clamp_min(1);mu=(x*w).sum(-1,keepdim=True)/den;var=((x-mu).square()*w).sum(-1,keepdim=True)/den;return (x-mu)/torch.sqrt(var+1e-4)*w
  def forward(self,m,t,o):
   z=[self.m(m),self.t(t),self.o(o)]
-  if self.variant=='joint':
+  if self.variant in ('joint','joint_inv'):
    recent=max(1,round(M_LEN*60/600));mr=F.interpolate(m[:,:,-recent:],size=F_LEN,mode='linear',align_corners=False)
+   mm=mr.abs().sum(1,keepdim=True)>0;tm=t.abs().sum(1,keepdim=True)>0;om=o.abs().sum(1,keepdim=True)>0;masks=torch.cat([mm,tm,om],1).to(m.dtype)
+   if self.variant=='joint_inv':mr=self.temporal_instance_norm(mr,mm);t=self.temporal_instance_norm(t,tm);o=self.temporal_instance_norm(o,om)
    dm=F.pad(mr[:,:,1:]-mr[:,:,:-1],(1,0));dt=F.pad(t[:,:,1:]-t[:,:,:-1],(1,0));do=F.pad(o[:,:,1:]-o[:,:,:-1],(1,0))
-   masks=torch.cat([(mr.abs().sum(1,keepdim=True)>0),(t.abs().sum(1,keepdim=True)>0),(o.abs().sum(1,keepdim=True)>0)],1).to(m.dtype)
    z.append(self.j(torch.cat([mr,t,o,dm,dt,do,masks],1)))
   raw=torch.cat(z,-1);mix=self.cross(torch.stack(z,1)+self.typ).flatten(1);return self.h(torch.cat([raw,mix],-1)).squeeze(-1)
 def lossfn(p,y):
@@ -102,6 +108,9 @@ def pred(q,dl):
  return np.concatenate(z),np.concatenate(yy) if yy else None
 def main():
  random.seed(SEED);np.random.seed(SEED);torch.manual_seed(SEED);lab=pd.read_feather('data/train/label.feather').sort_values('sample_id');n=len(lab);A=arrays('train',n);mo=lab.month.to_numpy();y=lab.target.to_numpy(np.float32);tr=np.flatnonzero(mo<TRAIN_END);va=np.flatnonzero((mo>=TRAIN_END)&(mo<VALID_END));norm=norm_stats(A,tr);np.savez(f'{ROOT}/norm_stats_{OUT_PREFIX}.npz',**{f'{k}_{z}':v[i] for k,v in norm.items() for i,z in enumerate(['mean','std'])})
+ sample_weights=None
+ if DOMAIN_SAMPLING:
+  dz=np.load('output/domain_scores.npz');assert np.array_equal(dz['train_sample_id'],lab.sample_id.to_numpy());dp=np.clip(dz['train_score'],1e-4,1-1e-4);sample_weights=np.clip((dp/(1-dp))**DOMAIN_POWER,.25,4);sample_weights/=sample_weights.mean();ess=sample_weights.sum()**2/np.dot(sample_weights,sample_weights);print(f'domain sampling power={DOMAIN_POWER}, ESS={ess:.0f}/{len(y)} ({ess/len(y):.3f})',flush=True)
  if RAM_BATCHED:A=load_ram_arrays(A);prep=GPUBatchPrep(norm);tl=vl=None
  else:tl=torch.utils.data.DataLoader(DS(A,tr,norm,y),BATCH,shuffle=True,num_workers=0,pin_memory=True,drop_last=True);vl=torch.utils.data.DataLoader(DS(A,va,norm,y),BATCH*2,shuffle=False,num_workers=0,pin_memory=True)
  q=Net().to(DEVICE)
@@ -115,10 +124,10 @@ def main():
   else:q.load_state_dict(state)
  sch=torch.optim.lr_scheduler.CosineAnnealingLR(opt,EPOCHS)
  for _ in range(start_epoch):sch.step()
- print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, variant={VARIANT}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, ram_batched={RAM_BATCHED}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
+ print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, variant={VARIANT}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, ram_batched={RAM_BATCHED}, domain_sampling={DOMAIN_SAMPLING}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
  for ep in range(start_epoch,EPOCHS):
   q.train();tot=nseen=0;st=time.time();opt.zero_grad(set_to_none=True);pending=0
-  epoch_batches=ram_batches(A,tr,y,BATCH,True,SEED+ep,drop_last=True) if RAM_BATCHED else tl
+  epoch_batches=ram_batches(A,tr,y,BATCH,True,SEED+ep,drop_last=True,sample_weights=sample_weights) if RAM_BATCHED else tl
   for bi,batch in enumerate(epoch_batches):
    if RAM_BATCHED:m,t,o,yy=prep.batch(batch)
    else:m,t,o,yy=[z.to(DEVICE,non_blocking=True) for z in batch]

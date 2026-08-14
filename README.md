@@ -71,6 +71,8 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 22. 多seedPublic仍显示0.140，说明+0.0001级离线增益不足以支持提交；保留多seed作内部降方差，但停止相邻seed权重实验。
 23. RAM整批索引、GPU端归一化与physical256×accum4将端到端吞吐从约1700提升到约4040 samples/s（2.36倍），v3训练每轮降至约5分钟。
 24. 时间对齐联合流在Proxy/Middle/Late和完整late重建均显著提升，但Public仍为0.140；说明现有历史CV仍不能完全代表隐藏测试期，停止该架构的相邻权重搜索。
+25. Train/Test对抗验证AUC 0.795，确认协变量漂移明显；密度比重采样和domain门控均损害测试相似组，已淘汰。
+26. 公开LB0.142 slim pack的6成员公式可逐行复现（最大误差1.1e-16）；其预测与我们的Public-0.140候选相关性0.901，40/60单位融合理论Public约0.1442–0.1452。
 
 ## 下一步
 
@@ -92,4 +94,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 - [x] RealMLP多seed审计与弱seed淘汰
 - [x] 新v3候选Public验证：0.138 → 0.140
 - [x] v3第二seed逐级Proxy/Middle/Late验证与全量训练
-- [ ] 多seed候选Public验证；获用户批准前不提交
+- [x] 多seed候选Public验证：仍为0.140，停止seed权重微调
+- [x] Train/Test对抗验证与domain weighting审计
+- [x] 公开LB0.142包来源、公式及逐行复现审计
+- [ ] 公开0.142×自研0.140融合候选；获用户批准前不提交

@@ -1,11 +1,11 @@
 """Fast RAM-batched proxy evaluation for joint aligned-stream v3 checkpoints."""
 import os,sys
-os.environ.update(MODEL_VARIANT='joint',GRID_ROOT='features/grid_v3',GRID_VERSION='v3',MARKET_LEN='400',FLOW_LEN='120',D_MODEL='64',N_LAYERS='2',BATCH='256')
+os.environ.setdefault('MODEL_VARIANT','joint');os.environ.update(GRID_ROOT='features/grid_v3',GRID_VERSION='v3',MARKET_LEN='400',FLOW_LEN='120',D_MODEL='64',N_LAYERS='2',BATCH='256')
 _argv=sys.argv;sys.argv=[sys.argv[0]]
 import numpy as np,pandas as pd,torch
 from train_multistream_grid import arrays,load_ram_arrays,GPUBatchPrep,ram_batches,Net,DEVICE,ROOT
 sys.argv=_argv
-PREFIX='joint_v3_proxy_fast'
+PREFIX=os.environ.get('OUT_PREFIX','joint_v3_proxy_fast')
 def unit(x):x=np.asarray(x,np.float64);x-=x.mean();return x/(np.linalg.norm(x)+1e-12)
 def stats(y,p,mo):
  v=[float(unit(y[mo==m])@unit(p[mo==m])) for m in np.unique(mo)];return float(unit(y)@unit(p)),float(np.mean(v)),float(np.min(v)),float(np.std(v))
@@ -23,5 +23,5 @@ def main():
  for name,eps in rec.items():
   p=np.mean([unit(out[f'ep{e}']) for e in eps],0);out[name]=p;print(name,stats(y[va],p,mo[va]),'corr_base',float(unit(p)@unit(b)),'corr_lgb',float(unit(p)@unit(pl)),flush=True)
   for w in (.2,.4,.5,.6,.8):print(' joint_weight_vs_base',w,stats(y[va],(1-w)*unit(b)+w*unit(p),mo[va]),flush=True)
- np.savez('output/joint_v3_proxy_oof.npz',**out)
+ np.savez(f'output/{PREFIX}_oof.npz',**out)
 if __name__=='__main__':main()
