@@ -73,6 +73,12 @@ def main():
  # Joint aligned-stream architecture: fixed 40% base-v3 + 60% joint-v3 inside the 20% v3 slot.
  jz=np.load('output/joint_v3_late_fast_oof.npz');assert np.array_equal(jz['sample_id'],va.sample_id.to_numpy()[order]);joint=unit(jz['ens4_5_6']);v3joint=.4*newv3+.6*joint;jointcand=.8*unit(public138)+.2*unit(v3joint)
  print('joint-v3 fixed mix',c(y,v3joint),'corr base/joint',float(newv3@joint),'full candidate',c(y,jointcand),'delta_vs_public140',c(y,jointcand)-c(y,public140))
+ # Third-anchor audit: fixed v9_big checkpoints 4/5/6 and pre-registered 10% weight.
+ vz=np.load('output/v9big_late_fast_oof.npz');assert np.array_equal(vz['sample_id'],va.sample_id.to_numpy()[order]);v9big=unit(vz['ens4_5_6']);jointv9=.9*unit(jointcand)+.1*v9big;months=va.month.to_numpy()[order]
+ def monthly_stats(p):
+  vals=[c(y[months==m],p[months==m]) for m in np.unique(months)];return c(y,p),float(np.mean(vals)),float(np.min(vals)),float(np.std(vals))
+ print('exact joint candidate stats',monthly_stats(jointcand),'plus v9big10',monthly_stats(jointv9),'corr',float(unit(jointcand)@v9big))
+ np.savez('output/exact_public140_late_reconstruction.npz',sample_id=va.sample_id.to_numpy()[order],target=y,month=months,public138=public138,public140=public140,jointcand=jointcand,v9big=v9big,jointv9=jointv9)
  # Replace or mix the old-v3 25% slot before applying the proven micro/RealMLP increments.
  for old_share in [0,.25,.5,.75,1.0]:
   v3slot=old_share*unit(v3)+(1-old_share)*newv3

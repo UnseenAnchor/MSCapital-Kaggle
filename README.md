@@ -5,6 +5,7 @@ Kaggle 比赛实战记录：用真实市场微观结构数据（盘口/委托流
 - 比赛页: https://www.kaggle.com/competitions/ms-capital-real-financial-market-forecasting
 - 指标: 余弦相似度（预测 vs 真实目标）
 - 截止: 2026-10-10 00:00 (北京时间) | 每日 5 次提交 | 个人赛
+- 复盘索引: [`docs/reviews/README.md`](docs/reviews/README.md)
 
 ## 环境
 
