@@ -91,6 +91,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 36. v2+v3 Multi-Resolution混合三折达到0.15348/0.15079/0.16679；原v3+Multi-Resolution 50/50在五个测试相似分组全部提高，最像测试五分位0.14020→0.14393，当前保留为最强自研锚点候选。
 37. Multi-Resolution全量锚点与旧自研锚点相关性0.99894，旧Public派生候选仍占80%；下一步必须替换旧锚点主体，不能继续做20%槽位微调。
 38. 经用户批准提交ref 55537873，Public仍为0.144；Multi-Resolution三折提升未转化为Public提升，下一候选必须是真正独立的自研锚点。
+39. 经用户批准提交独立Stack ref 55538309，Public达到0.145（较0.144提升+0.001）；证明替换旧Public派生主体有效，但距离Top10 0.153仍差约0.008。
 
 ## 下一步
 
