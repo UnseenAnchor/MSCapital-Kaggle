@@ -88,6 +88,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 33. 全量审计结论：当前0.144的有效来源是公开LB0.142参考60% + 已实测Public0.140自研锚点40%；低相关弱模型均不能替代自研锚点，后续只优化v3自研锚点，不再做诊断连投或相邻权重搜索。详见`docs/reviews/iterations/ITERATION_FULL_RESULTS_AUDIT_0144.md`。
 34. Top10门槛0.153要求新的自研锚点约达到0.151–0.153；当前所有已测模型均不达标。下一候选必须先通过自研锚点强度闸门，不达标不生成提交文件。
 35. v3 d_model96/3层容量增强Proxy ensemble仅0.14086，低于原v3 0.14752；简单堆模型容量不是Top10路线，已在Proxy止损。
+36. v2+v3 Multi-Resolution混合三折达到0.15348/0.15079/0.16679，但最像测试的Proxy五分位从原v3 0.14020降至0.14393（50/50混合），未达到Top10可信闸门，不提交。
 
 ## 下一步
 
