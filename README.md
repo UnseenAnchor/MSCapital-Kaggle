@@ -85,6 +85,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 30. 以嵌套时间切分训练Residual-LGB、Residual-RealMLP和Residual CNN–Transformer；序列残差在三折均为正，但Late完整候选仅+0.000026且最差月下降，现有特征空间残差基本耗尽。
 31. 原始Event Transformer保留逐笔顺序、连续时间、事件间隔和增撤单；全历史直接目标在三折2%权重均不下降，测试与0.144候选逐行重算相关性0.7044，纯模型诊断已获Public 0.103。
 32. Event Public 0.103虽高于正边际阈值，但与当前0.144的唯一最优融合仅预计+0.000017；不提交融合，早期0.6695相关性口径已由逐行重算纠正为0.7044。
+33. 全量审计结论：当前0.144的有效来源是公开LB0.142参考60% + 已实测Public0.140自研锚点40%；低相关弱模型均不能替代自研锚点，后续只优化v3自研锚点，不再做诊断连投或相邻权重搜索。详见`docs/reviews/iterations/ITERATION_FULL_RESULTS_AUDIT_0144.md`。
 
 ## 下一步
 
