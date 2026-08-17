@@ -93,6 +93,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 38. 经用户批准提交ref 55537873，Public仍为0.144；Multi-Resolution三折提升未转化为Public提升，下一候选必须是真正独立的自研锚点。
 39. 经用户批准提交独立Stack ref 55538309，Public达到0.145（较0.144提升+0.001）；证明替换旧Public派生主体有效，但距离Top10 0.153仍差约0.008。
 40. 经用户批准提交Cross-Scale Delta ref 55552095，Public仍为0.145；三折离线提升未转化为Public提升，已停止该架构族。
+41. 纯Cosine目标v3三折提高，与原v3 50/50后达0.15205/0.15097/0.16642；但替换Stack v3分量后仅+0.0004，测试候选与0.145方案相关性0.99983，不提交。
 
 ## 下一步
 
