@@ -95,6 +95,7 @@ data/*.feather → feat_market.py / feat_order_tx.py / feat_v2.py → features/*
 40. 经用户批准提交Cross-Scale Delta ref 55552095，Public仍为0.145；三折离线提升未转化为Public提升，已停止该架构族。
 41. 纯Cosine目标v3三折提高，与原v3 50/50后达0.15205/0.15097/0.16642；但替换Stack v3分量后仅+0.0004，测试候选与0.145方案相关性0.99983，不提交。
 42. 目标多样性扩展：四路组合（v3/Cosine-v3/MultiRes/Cosine-MultiRes）三折0.15509/0.15145/0.17022；Joint-Cosine Proxy 0.15307；Pairs Stack三折均值+0.0006，候选与0.145相关性0.99936，暂不提交；Recency采样Proxy降0.020已止损。
+43. 经用户批准提交Pairs Stack ref 55590785，Public仍为0.145；连续三种结构候选均停在0.145，当前Stack框架已达Public上限，后续只接受全新信息来源的候选。
 
 ## 下一步
 
