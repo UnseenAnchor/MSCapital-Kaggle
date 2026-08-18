@@ -12,7 +12,7 @@ ROOT=os.environ.get('GRID_ROOT','features/grid_v2'); GRID_VERSION=os.environ.get
 EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 10; BATCH=int(os.environ.get('BATCH','256')); ACCUM=int(os.environ.get('ACCUM_STEPS','1'))
 TRAIN_END=int(os.environ.get('TRAIN_END','62')); VALID_END=int(os.environ.get('VALID_END','71')); SEED=int(os.environ.get('SEED','42')); OUT_PREFIX=os.environ.get('OUT_PREFIX','multistream'); D_MODEL=int(os.environ.get('D_MODEL','64')); N_LAYERS=int(os.environ.get('N_LAYERS','2')); LR=float(os.environ.get('LR','0.001')); LAMBDA_COS=float(os.environ.get('LAMBDA_COS','1.0'))
 RESUME=os.environ.get('RESUME_CHECKPOINT','');START_EPOCH=int(os.environ.get('START_EPOCH','0'));RAM_BATCHED=os.environ.get('RAM_BATCHED','0')=='1'
-DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'))
+DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'));RECENCY_HALFLIFE=float(os.environ.get('RECENCY_HALFLIFE','0'))
 M_LEN=int(os.environ.get('MARKET_LEN','200')); F_LEN=int(os.environ.get('FLOW_LEN','60')); M_CH,T_CH,O_CH=11,7,10;VARIANT=os.environ.get('MODEL_VARIANT','base')
 torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
@@ -111,6 +111,8 @@ def main():
  sample_weights=None
  if DOMAIN_SAMPLING:
   dz=np.load('output/domain_scores.npz');assert np.array_equal(dz['train_sample_id'],lab.sample_id.to_numpy());dp=np.clip(dz['train_score'],1e-4,1-1e-4);sample_weights=np.clip((dp/(1-dp))**DOMAIN_POWER,.25,4);sample_weights/=sample_weights.mean();ess=sample_weights.sum()**2/np.dot(sample_weights,sample_weights);print(f'domain sampling power={DOMAIN_POWER}, ESS={ess:.0f}/{len(y)} ({ess/len(y):.3f})',flush=True)
+ if RECENCY_HALFLIFE>0:
+  rw=0.5**((mo.max()-mo)/RECENCY_HALFLIFE);rw/=rw.mean();sample_weights=rw if sample_weights is None else sample_weights*rw;sample_weights/=sample_weights.mean();ess=sample_weights.sum()**2/np.dot(sample_weights,sample_weights);print(f'recency halflife={RECENCY_HALFLIFE}, ESS={ess:.0f}/{len(y)} ({ess/len(y):.3f})',flush=True)
  if RAM_BATCHED:A=load_ram_arrays(A);prep=GPUBatchPrep(norm);tl=vl=None
  else:tl=torch.utils.data.DataLoader(DS(A,tr,norm,y),BATCH,shuffle=True,num_workers=0,pin_memory=True,drop_last=True);vl=torch.utils.data.DataLoader(DS(A,va,norm,y),BATCH*2,shuffle=False,num_workers=0,pin_memory=True)
  q=Net().to(DEVICE)

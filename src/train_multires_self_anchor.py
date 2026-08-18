@@ -2,7 +2,7 @@
 import os,time,queue,threading,random,numpy as np,pandas as pd,torch
 import torch.nn as nn
 import torch.nn.functional as F
-DEVICE=torch.device('cuda' if torch.cuda.is_available() else 'cpu');BS=128;ACC=8;EPOCHS=12;SEED=42;D=64;TRAIN_END=int(os.environ.get('TRAIN_END','45'));VALID_END=int(os.environ.get('VALID_END','71'));PREFIX=os.environ.get('OUT_PREFIX','multires_self_proxy');FULL_TRAIN=os.environ.get('FULL_TRAIN','0')=='1'
+DEVICE=torch.device('cuda' if torch.cuda.is_available() else 'cpu');BS=128;ACC=8;EPOCHS=12;SEED=42;D=64;TRAIN_END=int(os.environ.get('TRAIN_END','45'));VALID_END=int(os.environ.get('VALID_END','71'));PREFIX=os.environ.get('OUT_PREFIX','multires_self_proxy');FULL_TRAIN=os.environ.get('FULL_TRAIN','0')=='1';LAMBDA_COS=float(os.environ.get('LAMBDA_COS','0.7'))
 ROOT2='features/grid_v2';ROOT3='features/grid_v3';torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
 def unit(x):x=np.asarray(x,float);x-=x.mean();return x/(np.linalg.norm(x)+1e-12)
@@ -51,7 +51,7 @@ class Net(nn.Module):
  def forward(self,*x):
   z=[m(a) for m,a in zip(self.e,x)];raw=torch.cat(z,-1);mix=self.cross(torch.stack(z,1)+self.typ).flatten(1);return self.h(torch.cat([raw,mix],-1)).squeeze(-1)
 def lossfn(p,y):
- p=torch.nan_to_num(p);return .7*(1-F.cosine_similarity((p-p.mean())[None],(y-y.mean())[None],dim=1,eps=1e-8).mean())+.3*F.smooth_l1_loss(p,y*1000.)
+ p=torch.nan_to_num(p);return LAMBDA_COS*(1-F.cosine_similarity((p-p.mean())[None],(y-y.mean())[None],dim=1,eps=1e-8).mean())+(1-LAMBDA_COS)*F.smooth_l1_loss(p,y*1000.)
 @torch.no_grad()
 def infer(m,A2,A3,idx,y,prep):
  m.eval();out=[]
