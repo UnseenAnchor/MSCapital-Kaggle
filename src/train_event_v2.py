@@ -5,12 +5,12 @@ import torch.nn.functional as F
 DEVICE=torch.device('cuda' if torch.cuda.is_available() else 'cpu');BS=1024;SEED=42
 D=int(os.environ.get('D_MODEL','96'));NL=int(os.environ.get('N_LAYERS','3'));EPOCHS=int(os.environ.get('EPOCHS','18'));LAMBDA=float(os.environ.get('LAMBDA_COS','1.0'))
 TRAIN_END=int(os.environ.get('TRAIN_END','45'));VALID_END=int(os.environ.get('VALID_END','71'));PREFIX=os.environ.get('OUT_PREFIX','event_v2_proxy')
-ROOT='features/cache';TROOT='features/event_cache';torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
+ROOT='features/cache';TROOT=os.environ.get('EVENT_ROOT','features/event_cache_v2');torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
 def unit(x):x=np.asarray(x,np.float64);x-=x.mean();return x/(np.linalg.norm(x)+1e-12)
 def cosine(y,p):return float(unit(y)@unit(p))
 def load_arrays(split):
- t=time.time();A={'tx':np.array(np.load(f'{ROOT}/{split}_tx.npy',mmap_mode='r'),copy=True),'order':np.array(np.load(f'{ROOT}/{split}_order.npy',mmap_mode='r'),copy=True),'tx_time':np.array(np.load(f'{TROOT}/{split}_transaction_time.npy',mmap_mode='r'),copy=True),'order_time':np.array(np.load(f'{TROOT}/{split}_order_time.npy',mmap_mode='r'),copy=True)};print(split,'RAM GB',sum(x.nbytes for x in A.values())/2**30,'sec',time.time()-t,flush=True);return A
+ t=time.time();A={'tx':np.array(np.load(f'{TROOT}/{split}_transaction_feat.npy',mmap_mode='r'),copy=True),'order':np.array(np.load(f'{TROOT}/{split}_order_feat.npy',mmap_mode='r'),copy=True),'tx_time':np.array(np.load(f'{TROOT}/{split}_transaction_time.npy',mmap_mode='r'),copy=True),'order_time':np.array(np.load(f'{TROOT}/{split}_order_time.npy',mmap_mode='r'),copy=True)};print(split,'RAM GB',round(sum(x.nbytes for x in A.values())/2**30,2),'sec',round(time.time()-t),flush=True);return A
 def fit_stats(A,idx,nmax=50000):
  ii=np.sort(np.random.default_rng(42).choice(idx,min(nmax,len(idx)),replace=False));out={}
  for k in ('tx','order'):
@@ -71,10 +71,15 @@ def main():
    with torch.cuda.amp.autocast(enabled=DEVICE.type=='cuda'):loss=loss_fn(model(tx,tm,o,om),yy)
    opt.zero_grad(set_to_none=True);scaler.scale(loss).backward();scaler.unscale_(opt);torch.nn.utils.clip_grad_norm_(model.parameters(),1);scaler.step(opt);scaler.update();tot+=float(loss)*len(yy);seen+=len(yy)
   sched.step()
-  if ep in (6,9,12,15,18):preds[ep]=infer(model,A,vai,prep);torch.save(model.state_dict(),f'output/{PREFIX}_ep{ep}.pt');print(' epoch',ep,'cos',cosine(y[vai],preds[ep]),'sec',round(time.time()-st),flush=True)
+  if ep in (6,9,12,15,18):
+   torch.save(model.state_dict(),f'output/{PREFIX}_ep{ep}.pt')
+   if len(vai)>0:
+    preds[ep]=infer(model,A,vai,prep);print(' epoch',ep,'cos',cosine(y[vai],preds[ep]),'sec',round(time.time()-st),flush=True)
+   else:print(' epoch',ep,'loss',tot/seen,'checkpoint_saved(no_val)','sec',round(time.time()-st),flush=True)
   else:print(' epoch',ep,'loss',tot/seen,'sec',round(time.time()-st),flush=True)
  m=mo[vai]
- for es in [(6,9,12),(9,12,15),(12,15,18),(9,12,15,18)]:
-  es2=tuple(e for e in es if e<=EPOCHS);q=np.mean([unit(preds[e]) for e in es2],0);a=[cosine(y[vai][m==x],q[m==x]) for x in np.unique(m)];print('ens',es2,round(cosine(y[vai],q),6),round(np.mean(a),6),round(min(a),6),flush=True)
- np.savez(f'output/{PREFIX}_oof.npz',sample_id=sid[vai],target=y[vai],month=m,**{f'ep{e}':p for e,p in preds.items()})
+ if len(vai)>0:
+  for es in [(6,9,12),(9,12,15),(12,15,18),(9,12,15,18)]:
+   es2=tuple(e for e in es if e<=EPOCHS);q=np.mean([unit(preds[e]) for e in es2],0);a=[cosine(y[vai][m==x],q[m==x]) for x in np.unique(m)];print('ens',es2,round(cosine(y[vai],q),6),round(np.mean(a),6),round(min(a),6),flush=True)
+  np.savez(f'output/{PREFIX}_oof.npz',sample_id=sid[vai],target=y[vai],month=m,**{f'ep{e}':p for e,p in preds.items()})
 if __name__=='__main__':main()
