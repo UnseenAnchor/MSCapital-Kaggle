@@ -1,0 +1,23 @@
+# Event256 baseline (repro of Public 0.146 member). See docs/optimization/BASELINE_0146.md
+model: event_transformer_v2
+event_root: features/event_cache_v2
+length: 256
+d_model: 64
+n_layers: 2
+epochs: 12
+lambda_cos: 0.8
+batch: 1024
+seed: 42
+lr: 6e-4
+weight_decay: 1e-4
+checkpoints: [6, 9, 12]
+ensemble: unit-mean
+target: direct
+folds:
+  proxy:  {train_end: 45, valid_end: 71}
+  middle: {train_end: 51, valid_end: 71}
+  late:   {train_end: 62, valid_end: 71}
+expected_global_cosine:
+  proxy: 0.13113
+  middle: 0.12541
+  late: 0.14388
