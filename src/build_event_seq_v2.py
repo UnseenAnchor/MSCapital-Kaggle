@@ -4,7 +4,7 @@ Features are stored RAW (un-normalized); the model's Prep.one fits stats on the 
 from pathlib import Path
 import os, time, numpy as np, pyarrow.feather as pf
 from numba import njit, prange
-ROOT = Path('features/event_cache_v2'); ROOT.mkdir(parents=True, exist_ok=True)
+ROOT = Path(os.environ.get('EVENT_ROOT', 'features/event_cache_v2')); ROOT.mkdir(parents=True, exist_ok=True)
 L = int(os.environ.get('EVENT_LEN', '256'))
 
 @njit(parallel=True)
@@ -70,10 +70,10 @@ def one(split, name, cols):
     C = len(cols)
     feat = np.zeros((n, L, C), np.float32)
     fill_feat(val_s, sid_s, offsets, counts, n, L, C, feat)
-    np.save(f'features/event_cache_v2/{split}_{name}_feat.npy', feat)
+    np.save(f'{ROOT}/{split}_{name}_feat.npy', feat)
     tim = np.zeros((n, L, 4), np.float32)
     build_time(sec_s, offsets, counts, n, L, tim)
-    np.save(f'features/event_cache_v2/{split}_{name}_time.npy', tim.astype(np.float16))
+    np.save(f'{ROOT}/{split}_{name}_time.npy', tim.astype(np.float16))
     print(split, name, 'rows', n, 'shape', feat.shape, 'count q', np.quantile(counts, [0, .5, .9, .99, 1]).round(1), 'sec', round(time.time() - t), flush=True)
 
 def main():
