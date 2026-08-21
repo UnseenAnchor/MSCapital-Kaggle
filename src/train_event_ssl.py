@@ -29,6 +29,7 @@ VALID_END = int(os.environ.get("VALID_END", "71"))
 TROOT = os.environ.get("EVENT_ROOT", "features/event_cache_v2")
 PREFIX = os.environ.get("OUT_PREFIX", "event_ssl_proxy")
 USE_SSL = os.environ.get("USE_SSL", "1") == "1"
+FULL = os.environ.get("FULL", "0") == "1"  # full-data supervised training (no eval, for test prediction)
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -208,8 +209,12 @@ def main():
     mo = lab.month.to_numpy()
     y = lab.target.to_numpy(np.float32)
     A = load_arrays("train")
-    tri = np.flatnonzero(mo < TRAIN_END)
-    vai = np.flatnonzero((mo >= TRAIN_END) & (mo < VALID_END))
+    if FULL:
+        tri = np.arange(len(A["tx"]))
+        vai = np.array([], dtype=np.int64)
+    else:
+        tri = np.flatnonzero(mo < TRAIN_END)
+        vai = np.flatnonzero((mo >= TRAIN_END) & (mo < VALID_END))
     prep = Prep(fit_stats(A, tri))
     model = Net(A["tx"].shape[1]).to(DEVICE)
     if USE_SSL:
@@ -246,6 +251,9 @@ def main():
         else:
             print(" epoch", ep, "loss", tot / seen, "sec", round(time.time() - st), flush=True)
     m = mo[vai]
+    if len(vai) == 0:
+        print("FULL training done; checkpoints saved (no validation)", flush=True)
+        return
     q = np.mean([unit(preds[e]) for e in (6, 9, 12)], 0)
     g = cosine(y[vai], q)
     per = [cosine(y[vai][m == x], q[m == x]) for x in np.unique(m)]
