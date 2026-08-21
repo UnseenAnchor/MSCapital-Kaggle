@@ -246,8 +246,11 @@ def main():
         sched.step()
         if ep in (6, 9, 12):
             torch.save(model.state_dict(), f"output/{PREFIX}_ep{ep}.pt")
-            preds[ep] = infer(model, A, vai, prep)
-            print(" epoch", ep, "cos", cosine(y[vai], preds[ep]), "sec", round(time.time() - st), flush=True)
+            if len(vai) > 0:
+                preds[ep] = infer(model, A, vai, prep)
+                print(" epoch", ep, "cos", cosine(y[vai], preds[ep]), "sec", round(time.time() - st), flush=True)
+            else:
+                print(" epoch", ep, "checkpoint_saved(no_val)", "sec", round(time.time() - st), flush=True)
         else:
             print(" epoch", ep, "loss", tot / seen, "sec", round(time.time() - st), flush=True)
     m = mo[vai]
