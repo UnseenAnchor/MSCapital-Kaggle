@@ -31,6 +31,10 @@ TRAIN_END = int(os.environ.get("TRAIN_END", "45"))
 VALID_END = int(os.environ.get("VALID_END", "71"))
 TROOT = os.environ.get("EVENT_ROOT", "features/event_cache_v2")
 OUT = os.environ.get("OUT_PREFIX", "event_ssl_proxy")
+# Domain adaptation: include ALL test streams (no labels needed) in SSL pretraining.
+# This is the key difference vs the train-only SSL probe: the encoder sees test-domain
+# distributions, attacking the OOF->Public transfer gap directly.
+INCLUDE_TEST = os.environ.get("SSL_INCLUDE_TEST", "0") == "1"
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -61,18 +65,32 @@ def fit_stats(A, idx, nmax=50000):
     return out
 
 
-def batches(A, idx, bs, shuffle, seed, maxq=3):
+def batches(A, idx, bs, shuffle, seed, maxq=3, At=None, n_train=0):
     idx = np.asarray(idx).copy()
     if shuffle:
         np.random.default_rng(seed).shuffle(idx)
     q = queue.Queue(maxq)
     stop = object()
 
+    def grab(src, j):
+        return (src["tx"][j], src["order"][j], src["tx_time"][j], src["order_time"][j])
+
     def work():
         try:
             for i in range(0, len(idx), bs):
                 j = idx[i:i + bs]
-                q.put((A["tx"][j], A["order"][j], A["tx_time"][j], A["order_time"][j]))
+                if At is None:
+                    q.put(grab(A, j))
+                else:
+                    tr = j[j < n_train]
+                    te = j[j >= n_train] - n_train
+                    if len(tr) and len(te):
+                        b1, b2 = grab(A, tr), grab(At, te)
+                        q.put(tuple(np.concatenate([a, b]) for a, b in zip(b1, b2)))
+                    elif len(tr):
+                        q.put(grab(A, tr))
+                    else:
+                        q.put(grab(At, te))
         finally:
             q.put(stop)
 
@@ -158,7 +176,14 @@ def main():
     A = load_arrays("train")
     tri = np.flatnonzero(mo < TRAIN_END)
     vai = np.flatnonzero((mo >= TRAIN_END) & (mo < VALID_END))
-    prep = Prep(fit_stats(A, tri))
+    At = None
+    n_train = 0
+    if INCLUDE_TEST:
+        At = load_arrays("test")
+        n_train = len(A["tx"])
+        tri = np.concatenate([tri, n_train + np.arange(len(At["tx"]))])
+        print("SSL includes test domain: train", n_train, "+ test", len(At["tx"]), flush=True)
+    prep = Prep(fit_stats(A, np.flatnonzero(mo < TRAIN_END)))
     tx_enc = SSLEncoder(10).to(DEVICE)
     o_enc = SSLEncoder(11).to(DEVICE)
     tx_head = SSLHeads(3).to(DEVICE)
@@ -173,7 +198,7 @@ def main():
     for ep in range(1, SSL_EPOCHS + 1):
         tx_enc.train(); o_enc.train(); tx_head.train(); o_head.train()
         tot = seen = 0; st = time.time()
-        for b in batches(A, tri, BS, True, SEED + ep):
+        for b in batches(A, tri, BS, True, SEED + ep, At=At, n_train=n_train):
             tx_v, tx_t, tx_m, o_v, o_t, o_m = prep.batch(b)
             with torch.cuda.amp.autocast(enabled=DEVICE.type == "cuda"):
                 # random mask of active tokens (15%)
