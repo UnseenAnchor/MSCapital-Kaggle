@@ -1,0 +1,30 @@
+{
+  "prefix": "event_ssl",
+  "fold": "proxy",
+  "timestamp": "2026-08-20T22:17:50",
+  "git_commit": "d1e432f411a0360dd6585a6a79ff694d3a6beb09",
+  "git_dirty": true,
+  "config_sha256": "4233afcdff26b0205f2bf41c55b51c5fecb7413830e618ddbb8d7b3ed63d6a42",
+  "metrics": {
+    "single_model": {
+      "global": 0.133,
+      "month_mean": 0.1289,
+      "worst_month": 0.0977,
+      "vs_baseline": 0.00187
+    },
+    "stack_delta_vs_orig_event": {
+      "global": 0.00034,
+      "month_mean": 0.00033,
+      "worst_month": 0.00032
+    },
+    "gate": {
+      "single_min": 0.003,
+      "stack_min": 0.0015,
+      "passed": false
+    }
+  },
+  "extra": {
+    "gate_decision": "STOP - proxy gate failed",
+    "baseline_single": 0.13113
+  }
+}

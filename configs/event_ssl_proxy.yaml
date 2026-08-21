@@ -1,0 +1,28 @@
+# Event256 SSL pretraining + finetune — Proxy fold MVP
+# Gate: event single-model >= 0.1348 on proxy (baseline 0.1318+0.003) to continue.
+model: event_transformer_v2
+event_root: features/event_cache_v2
+length: 256
+d_model: 64
+n_layers: 2
+supervised_epochs: 12
+lambda_cos: 0.8
+batch: 1024
+seed: 42
+lr: 6e-4
+weight_decay: 1e-4
+checkpoints: [6, 9, 12]
+ssl:
+  epochs: 8
+  mask_ratio: 0.15
+  lr: 3e-4
+  loss_weights: {recon: 1.0, side: 0.3, interval: 0.2}
+folds:
+  proxy:  {train_end: 45, valid_end: 71}
+  middle: {train_end: 51, valid_end: 71}
+  late:   {train_end: 62, valid_end: 71}
+stop_loss:
+  proxy_single_min: 0.1348
+  stack_delta_min: 0.0015
+  fold_regress_max: 0.0002
+  worst_month_regress_max: 0.001

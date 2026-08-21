@@ -1,0 +1,11 @@
+[project]
+name = "mscapital"
+version = "0.1.0"
+description = "MSCapital Kaggle pipeline: shared evaluation, splits, and data-contract guards"
+requires-python = ">=3.9"
+dependencies = ["numpy", "pandas", "pyarrow", "torch", "lightgbm"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
