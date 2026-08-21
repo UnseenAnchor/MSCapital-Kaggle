@@ -60,7 +60,7 @@ Train-only SSL 探针（+0.00187 单模）证明 SSL 方向有信号但不足；
 
 - **2026-08-21 提交 w20**：`output/candidate_event_ssl_tt_public60_40_w20.csv`（SHA256 `d66738636dac7665...`），ref **55666656**，经用户批准提交；
 - 认证链路修复：本机缺 kaggle.json，旧 kagglesdk 不支持 access_token → 升级 kagglesdk 0.1.28（支持 `~/.kaggle/access_token` KGAT 认证），`src/submit.py` 原样可用；另沉淀 `src/submit_bearer.py`（REST Bearer+XSRF 直连，读可用/写需 kaggle.json，备用）；
-- Public 评分待回填（轮询 `competitions/submissions/list`）。
+- **Public 结果：0.146（与 55601441 持平，无增量、无回退）**。OOF 单模 +0.0069 未转化为 Public；test 域 SSL 增益在 Public 粒度下不迁移（候选相关 0.999，期望增量 0.0006~0.0009 低于显示精度）。
 
 ## 风险与止损
 
