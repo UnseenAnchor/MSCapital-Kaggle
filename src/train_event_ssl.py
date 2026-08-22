@@ -295,7 +295,7 @@ def main():
                  **{f"ep{e}": p for e, p in preds.items()})
 
     # ---- pseudo-label finetune stage (test streams + ensemble pseudo-labels) ----
-    if PL_EPOCHS > 0 and not FULL:
+    if PL_EPOCHS > 0:
         m = mo[vai]
         pl = pd.read_csv(PL_TARGET).sort_values("sample_id")
         assert len(pl) == 647896, f"pseudo-label rows {len(pl)}"
