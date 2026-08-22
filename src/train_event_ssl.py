@@ -227,9 +227,13 @@ def main():
         # resume from existing supervised ep12 checkpoint (no re-run of supervised stage)
         model.load_state_dict(torch.load(f"output/{PREFIX}_ep12.pt", map_location=DEVICE))
         print("PL_ONLY: resumed from", f"output/{PREFIX}_ep12.pt", flush=True)
-        old = np.load(f"output/{PREFIX}_oof.npz")
-        g = cosine(y[vai], np.mean([unit(old[f"ep{e}"]) for e in (6, 9, 12)], 0))
-        print(f"supervised ens(6,9,12) reference: {g:.6f}", flush=True)
+        if len(vai) > 0:
+            old = np.load(f"output/{PREFIX}_oof.npz")
+            g = cosine(y[vai], np.mean([unit(old[f"ep{e}"]) for e in (6, 9, 12)], 0))
+            print(f"supervised ens(6,9,12) reference: {g:.6f}", flush=True)
+        else:
+            g = 0.0
+            print("FULL mode: no validation reference", flush=True)
         preds = {}
     elif USE_SSL:
         load_ssl_weights(model)
