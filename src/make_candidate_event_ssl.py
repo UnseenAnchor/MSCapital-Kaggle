@@ -23,7 +23,7 @@ MEMBERS = {
     "multires": "output/diagnostic_multires_self_full_unit.csv",
 }
 EVENT_ORIG = "output/submission_event_256_unit.csv"
-EVENT_SSL = "output/submission_event_ssl_tt_full_unit.csv"
+EVENT_SSL = os.environ.get("EVENT_SSL_CSV", "output/submission_event_ssl_tt_full_unit.csv")
 W5 = np.array([.176, .132, .132, .308, .132])
 WEIGHTS = [0.12, 0.15, 0.20]
 
