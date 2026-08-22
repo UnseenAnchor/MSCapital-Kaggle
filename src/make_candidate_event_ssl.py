@@ -11,6 +11,7 @@ event member takes weight w out of the self-stack, others rescaled.
 Run: python src/make_candidate_event_ssl.py
 """
 import hashlib
+import os
 import numpy as np
 import pandas as pd
 
@@ -24,6 +25,7 @@ MEMBERS = {
 }
 EVENT_ORIG = "output/submission_event_256_unit.csv"
 EVENT_SSL = os.environ.get("EVENT_SSL_CSV", "output/submission_event_ssl_tt_full_unit.csv")
+USE_PL_OOF = os.environ.get("USE_PL_OOF", "0") == "1"  # compare against pseudo-label-finetuned fold OOFs
 W5 = np.array([.176, .132, .132, .308, .132])
 WEIGHTS = [0.12, 0.15, 0.20]
 
@@ -76,7 +78,7 @@ def load_oof(fold):
         P = [r["late_lgb"], r["late_s42"], v["ens4_5_6"], j["ens4_5_6"],
              np.mean([q["ep5"], q["ep6"], q["ep7"]], 0)]
     ev = np.load(f"output/event_256_{fold}_oof.npz")
-    sl = np.load(f"output/event_ssl_tt_{fold}_oof.npz")
+    sl = np.load(f"output/event_ssl_tt_{fold}_pl_oof.npz" if USE_PL_OOF else f"output/event_ssl_tt_{fold}_oof.npz")
     pm = posmap(ev["sample_id"]); qm = posmap(sl["sample_id"])
     ev_p = np.mean([ev["ep6"], ev["ep9"], ev["ep12"]], 0)[[pm[int(s)] for s in ids]]
     sl_p = np.mean([sl["ep6"], sl["ep9"], sl["ep12"]], 0)[[qm[int(s)] for s in ids]]
