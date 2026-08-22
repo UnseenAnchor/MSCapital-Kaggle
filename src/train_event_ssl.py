@@ -292,6 +292,7 @@ def main():
 
     # ---- pseudo-label finetune stage (test streams + ensemble pseudo-labels) ----
     if PL_EPOCHS > 0 and not FULL:
+        m = mo[vai]
         pl = pd.read_csv(PL_TARGET).sort_values("sample_id")
         assert len(pl) == 647896, f"pseudo-label rows {len(pl)}"
         y_pl = pl.prediction.to_numpy(np.float32)
@@ -320,11 +321,17 @@ def main():
             sched.step()
             if ep in (6, 9, 12):
                 torch.save(model.state_dict(), f"output/{PREFIX}_pl{ep}.pt")
-                pl_preds[ep] = infer(model, A, vai, prep)
-                print(" pl_epoch", ep, "cos", cosine(y[vai], pl_preds[ep]),
-                      "sec", round(time.time() - st), flush=True)
+                if len(vai) > 0:
+                    pl_preds[ep] = infer(model, A, vai, prep)
+                    print(" pl_epoch", ep, "cos", cosine(y[vai], pl_preds[ep]),
+                          "sec", round(time.time() - st), flush=True)
+                else:
+                    print(" pl_epoch", ep, "checkpoint_saved(no_val)", "sec", round(time.time() - st), flush=True)
             else:
                 print(" pl_epoch", ep, "loss", tot / seen, "sec", round(time.time() - st), flush=True)
+        if len(vai) == 0:
+            print("PL finetune done (FULL); pl checkpoints saved", flush=True)
+            return
         q2 = np.mean([unit(pl_preds[e]) for e in (6, 9, 12)], 0)
         g2 = cosine(y[vai], q2)
         per2 = [cosine(y[vai][m == x], q2[m == x]) for x in np.unique(m)]

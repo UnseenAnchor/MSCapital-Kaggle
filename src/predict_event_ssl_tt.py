@@ -15,6 +15,7 @@ from train_event_ssl import DEVICE, BS, SEED, load_arrays, fit_stats, batches, P
 
 def main():
     PREFIX = os.environ.get("PREFIX", "event_ssl_tt_full")
+    CKPT_SUFFIX = os.environ.get("CHECKPOINT_SUFFIX", "ep")  # "ep" or "pl" (pseudo-label finetuned)
     CHECKPOINTS = os.environ.get("CHECKPOINTS", "6,9,12").split(",")
     lab = pd.read_feather("data/train/label.feather").sort_values("sample_id")
     n_train = len(lab)
@@ -29,7 +30,7 @@ def main():
     acc = np.zeros(n_test, np.float64)
     for ep in CHECKPOINTS:
         model = Net(A_test["tx"].shape[1]).to(DEVICE)
-        model.load_state_dict(torch.load(f"output/{PREFIX}_ep{ep}.pt", map_location=DEVICE))
+        model.load_state_dict(torch.load(f"output/{PREFIX}_{CKPT_SUFFIX}{ep}.pt", map_location=DEVICE))
         p = infer(model, A_test, np.arange(n_test), prep)
         acc += unit(p)
         print(f"ep{ep} done, mean={p.mean():.5f}", flush=True)
