@@ -30,6 +30,12 @@ TROOT = os.environ.get("EVENT_ROOT", "features/event_cache_v2")
 PREFIX = os.environ.get("OUT_PREFIX", "event_ssl_proxy")
 USE_SSL = os.environ.get("USE_SSL", "1") == "1"
 FULL = os.environ.get("FULL", "0") == "1"  # full-data supervised training (no eval, for test prediction)
+# Pseudo-label (PL) finetune on TEST streams with an ensemble prediction csv.
+# Attacks the train->test transfer gap at the output level (vs SSL which only used test inputs).
+PL_EPOCHS = int(os.environ.get("PL_EPOCHS", "0"))  # >0 enables PL stage
+PL_TARGET = os.environ.get("PL_TARGET", "output/candidate_event_ssl_tt_public60_40_w20.csv")
+PL_LR = float(os.environ.get("PL_LR", "2e-4"))
+PL_ONLY = os.environ.get("PL_ONLY", "0") == "1"  # skip supervised stage; resume from {PREFIX}_ep12.pt
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -217,7 +223,15 @@ def main():
         vai = np.flatnonzero((mo >= TRAIN_END) & (mo < VALID_END))
     prep = Prep(fit_stats(A, tri))
     model = Net(A["tx"].shape[1]).to(DEVICE)
-    if USE_SSL:
+    if PL_ONLY:
+        # resume from existing supervised ep12 checkpoint (no re-run of supervised stage)
+        model.load_state_dict(torch.load(f"output/{PREFIX}_ep12.pt", map_location=DEVICE))
+        print("PL_ONLY: resumed from", f"output/{PREFIX}_ep12.pt", flush=True)
+        old = np.load(f"output/{PREFIX}_oof.npz")
+        g = cosine(y[vai], np.mean([unit(old[f"ep{e}"]) for e in (6, 9, 12)], 0))
+        print(f"supervised ens(6,9,12) reference: {g:.6f}", flush=True)
+        preds = {}
+    elif USE_SSL:
         load_ssl_weights(model)
     print("PREFIX", PREFIX, "train", len(tri), "valid", len(vai), "D", D, "layers", NL,
           "epochs", EPOCHS, "ssl", USE_SSL, "params", round(sum(p.numel() for p in model.parameters()) / 1e6, 2),
@@ -229,45 +243,97 @@ def main():
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, EPOCHS)
     scaler = torch.cuda.amp.GradScaler(enabled=DEVICE.type == "cuda")
     preds = {}
-    for ep in range(1, EPOCHS + 1):
-        model.train()
-        tot = seen = 0
-        st = time.time()
-        for b in batches(A, tri, y, BS, True, SEED + ep):
-            tx, tm, o, om, yy = prep.batch(b)
-            with torch.cuda.amp.autocast(enabled=DEVICE.type == "cuda"):
-                loss = loss_fn(model(tx, tm, o, om), yy)
-            opt.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.unscale_(opt)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-            scaler.step(opt); scaler.update()
-            tot += float(loss) * len(yy); seen += len(yy)
-        sched.step()
-        if ep in (6, 9, 12):
-            torch.save(model.state_dict(), f"output/{PREFIX}_ep{ep}.pt")
-            if len(vai) > 0:
-                preds[ep] = infer(model, A, vai, prep)
-                print(" epoch", ep, "cos", cosine(y[vai], preds[ep]), "sec", round(time.time() - st), flush=True)
+    if not PL_ONLY:
+        try:
+            opt = torch.optim.AdamW(model.parameters(), lr=6e-4, weight_decay=1e-4, fused=True)
+        except TypeError:
+            opt = torch.optim.AdamW(model.parameters(), lr=6e-4, weight_decay=1e-4)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, EPOCHS)
+        scaler = torch.cuda.amp.GradScaler(enabled=DEVICE.type == "cuda")
+        for ep in range(1, EPOCHS + 1):
+            model.train()
+            tot = seen = 0
+            st = time.time()
+            for b in batches(A, tri, y, BS, True, SEED + ep):
+                tx, tm, o, om, yy = prep.batch(b)
+                with torch.cuda.amp.autocast(enabled=DEVICE.type == "cuda"):
+                    loss = loss_fn(model(tx, tm, o, om), yy)
+                opt.zero_grad(set_to_none=True)
+                scaler.scale(loss).backward()
+                scaler.unscale_(opt)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                scaler.step(opt); scaler.update()
+                tot += float(loss) * len(yy); seen += len(yy)
+            sched.step()
+            if ep in (6, 9, 12):
+                torch.save(model.state_dict(), f"output/{PREFIX}_ep{ep}.pt")
+                if len(vai) > 0:
+                    preds[ep] = infer(model, A, vai, prep)
+                    print(" epoch", ep, "cos", cosine(y[vai], preds[ep]), "sec", round(time.time() - st), flush=True)
+                else:
+                    print(" epoch", ep, "checkpoint_saved(no_val)", "sec", round(time.time() - st), flush=True)
             else:
-                print(" epoch", ep, "checkpoint_saved(no_val)", "sec", round(time.time() - st), flush=True)
-        else:
-            print(" epoch", ep, "loss", tot / seen, "sec", round(time.time() - st), flush=True)
-    m = mo[vai]
-    if len(vai) == 0:
-        print("FULL training done; checkpoints saved (no validation)", flush=True)
-        return
-    q = np.mean([unit(preds[e]) for e in (6, 9, 12)], 0)
-    g = cosine(y[vai], q)
-    per = [cosine(y[vai][m == x], q[m == x]) for x in np.unique(m)]
-    print("RESULT ens(6,9,12) global", round(g, 6), "month_mean", round(float(np.mean(per)), 6),
-          "worst", round(float(min(per)), 6), flush=True)
-    base = {"proxy": 0.13113, "middle": 0.12541, "late": 0.14388}
-    fold = {45: "proxy", 51: "middle", 62: "late"}.get(TRAIN_END, "?")
-    if fold in base:
-        print(f"vs_baseline {fold}: {g - base[fold]:+.6f} (baseline {base[fold]})", flush=True)
-    np.savez(f"output/{PREFIX}_oof.npz", sample_id=sid[vai], target=y[vai], month=m,
-             **{f"ep{e}": p for e, p in preds.items()})
+                print(" epoch", ep, "loss", tot / seen, "sec", round(time.time() - st), flush=True)
+        m = mo[vai]
+        if len(vai) == 0:
+            print("FULL training done; checkpoints saved (no validation)", flush=True)
+            return
+        q = np.mean([unit(preds[e]) for e in (6, 9, 12)], 0)
+        g = cosine(y[vai], q)
+        per = [cosine(y[vai][m == x], q[m == x]) for x in np.unique(m)]
+        print("RESULT ens(6,9,12) global", round(g, 6), "month_mean", round(float(np.mean(per)), 6),
+              "worst", round(float(min(per)), 6), flush=True)
+        base = {"proxy": 0.13113, "middle": 0.12541, "late": 0.14388}
+        fold = {45: "proxy", 51: "middle", 62: "late"}.get(TRAIN_END, "?")
+        if fold in base:
+            print(f"vs_baseline {fold}: {g - base[fold]:+.6f} (baseline {base[fold]})", flush=True)
+        np.savez(f"output/{PREFIX}_oof.npz", sample_id=sid[vai], target=y[vai], month=m,
+                 **{f"ep{e}": p for e, p in preds.items()})
+
+    # ---- pseudo-label finetune stage (test streams + ensemble pseudo-labels) ----
+    if PL_EPOCHS > 0 and not FULL:
+        pl = pd.read_csv(PL_TARGET).sort_values("sample_id")
+        assert len(pl) == 647896, f"pseudo-label rows {len(pl)}"
+        y_pl = pl.prediction.to_numpy(np.float32)
+        At = load_arrays("test")
+        n_test = len(At["tx"])
+        print("PL finetune: test", n_test, "epochs", PL_EPOCHS, "lr", PL_LR,
+              "target", PL_TARGET, flush=True)
+        opt = torch.optim.AdamW(model.parameters(), lr=PL_LR, weight_decay=1e-4)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, PL_EPOCHS)
+        scaler = torch.cuda.amp.GradScaler(enabled=DEVICE.type == "cuda")
+        pl_preds = {}
+        for ep in range(1, PL_EPOCHS + 1):
+            model.train()
+            tot = seen = 0
+            st = time.time()
+            for b in batches(At, np.arange(n_test), y_pl, BS, True, SEED + 1000 + ep):
+                tx, tm, o, om, yy = prep.batch(b)
+                with torch.cuda.amp.autocast(enabled=DEVICE.type == "cuda"):
+                    loss = loss_fn(model(tx, tm, o, om), yy)
+                opt.zero_grad(set_to_none=True)
+                scaler.scale(loss).backward()
+                scaler.unscale_(opt)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                scaler.step(opt); scaler.update()
+                tot += float(loss) * len(yy); seen += len(yy)
+            sched.step()
+            if ep in (6, 9, 12):
+                torch.save(model.state_dict(), f"output/{PREFIX}_pl{ep}.pt")
+                pl_preds[ep] = infer(model, A, vai, prep)
+                print(" pl_epoch", ep, "cos", cosine(y[vai], pl_preds[ep]),
+                      "sec", round(time.time() - st), flush=True)
+            else:
+                print(" pl_epoch", ep, "loss", tot / seen, "sec", round(time.time() - st), flush=True)
+        q2 = np.mean([unit(pl_preds[e]) for e in (6, 9, 12)], 0)
+        g2 = cosine(y[vai], q2)
+        per2 = [cosine(y[vai][m == x], q2[m == x]) for x in np.unique(m)]
+        print("PL RESULT ens(6,9,12) global", round(g2, 6),
+              "month_mean", round(float(np.mean(per2)), 6),
+              "worst", round(float(min(per2)), 6), flush=True)
+        print(f"PL vs supervised: {g2 - g:+.6f}", flush=True)
+        np.savez(f"output/{PREFIX}_pl_oof.npz", sample_id=sid[vai], target=y[vai], month=m,
+                 **{f"ep{e}": p for e, p in pl_preds.items()})
 
 
 if __name__ == "__main__":
