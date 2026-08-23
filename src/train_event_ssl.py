@@ -33,9 +33,15 @@ FULL = os.environ.get("FULL", "0") == "1"  # full-data supervised training (no e
 # Pseudo-label (PL) finetune on TEST streams with an ensemble prediction csv.
 # Attacks the train->test transfer gap at the output level (vs SSL which only used test inputs).
 PL_EPOCHS = int(os.environ.get("PL_EPOCHS", "0"))  # >0 enables PL stage
-PL_TARGET = os.environ.get("PL_TARGET", "output/candidate_event_ssl_tt_public60_40_w20.csv")
+# Stable teacher downloaded from Kaggle ref 55666656; avoid mutable candidate files overwritten by later experiments.
+PL_TARGET = os.environ.get("PL_TARGET", "output/teacher_submission_55666656.csv")
 PL_LR = float(os.environ.get("PL_LR", "2e-4"))
-PL_ONLY = os.environ.get("PL_ONLY", "0") == "1"  # skip supervised stage; resume from {PREFIX}_ep12.pt
+PL_ONLY = os.environ.get("PL_ONLY", "0") == "1"  # skip supervised stage; resume from a supervised checkpoint
+PL_RESUME_EPOCH = int(os.environ.get("PL_RESUME_EPOCH", "12"))
+PL_HEAD_ONLY = os.environ.get("PL_HEAD_ONLY", "0") == "1"  # freeze encoders/cross; train head only
+PL_TAG = os.environ.get("PL_TAG", "pl")
+_pl_save = os.environ.get("PL_SAVE_EPOCHS", "")
+PL_SAVE_EPOCHS = tuple(int(x) for x in _pl_save.split(",") if x) if _pl_save else (6, 9, 12)
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -225,8 +231,9 @@ def main():
     model = Net(A["tx"].shape[1]).to(DEVICE)
     if PL_ONLY:
         # resume from existing supervised ep12 checkpoint (no re-run of supervised stage)
-        model.load_state_dict(torch.load(f"output/{PREFIX}_ep12.pt", map_location=DEVICE))
-        print("PL_ONLY: resumed from", f"output/{PREFIX}_ep12.pt", flush=True)
+        resume_path = f"output/{PREFIX}_ep{PL_RESUME_EPOCH}.pt"
+        model.load_state_dict(torch.load(resume_path, map_location=DEVICE))
+        print("PL_ONLY: resumed from", resume_path, flush=True)
         if len(vai) > 0:
             old = np.load(f"output/{PREFIX}_oof.npz")
             g = cosine(y[vai], np.mean([unit(old[f"ep{e}"]) for e in (6, 9, 12)], 0))
@@ -302,14 +309,27 @@ def main():
         y_pl = pl.prediction.to_numpy(np.float32)
         At = load_arrays("test")
         n_test = len(At["tx"])
+        if not PL_SAVE_EPOCHS or max(PL_SAVE_EPOCHS) > PL_EPOCHS:
+            raise ValueError(f"PL_SAVE_EPOCHS={PL_SAVE_EPOCHS} incompatible with PL_EPOCHS={PL_EPOCHS}")
+        if PL_HEAD_ONLY:
+            for p in model.parameters():
+                p.requires_grad_(False)
+            for p in model.head.parameters():
+                p.requires_grad_(True)
+        trainable = [p for p in model.parameters() if p.requires_grad]
         print("PL finetune: test", n_test, "epochs", PL_EPOCHS, "lr", PL_LR,
-              "target", PL_TARGET, flush=True)
-        opt = torch.optim.AdamW(model.parameters(), lr=PL_LR, weight_decay=1e-4)
+              "head_only", PL_HEAD_ONLY, "save", PL_SAVE_EPOCHS, "tag", PL_TAG,
+              "trainable", sum(p.numel() for p in trainable), "target", PL_TARGET, flush=True)
+        opt = torch.optim.AdamW(trainable, lr=PL_LR, weight_decay=1e-4)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, PL_EPOCHS)
         scaler = torch.cuda.amp.GradScaler(enabled=DEVICE.type == "cuda")
         pl_preds = {}
         for ep in range(1, PL_EPOCHS + 1):
-            model.train()
+            if PL_HEAD_ONLY:
+                model.eval()
+                model.head.train()
+            else:
+                model.train()
             tot = seen = 0
             st = time.time()
             for b in batches(At, np.arange(n_test), y_pl, BS, True, SEED + 1000 + ep):
@@ -323,8 +343,8 @@ def main():
                 scaler.step(opt); scaler.update()
                 tot += float(loss) * len(yy); seen += len(yy)
             sched.step()
-            if ep in (6, 9, 12):
-                torch.save(model.state_dict(), f"output/{PREFIX}_pl{ep}.pt")
+            if ep in PL_SAVE_EPOCHS:
+                torch.save(model.state_dict(), f"output/{PREFIX}_{PL_TAG}{ep}.pt")
                 if len(vai) > 0:
                     pl_preds[ep] = infer(model, A, vai, prep)
                     print(" pl_epoch", ep, "cos", cosine(y[vai], pl_preds[ep]),
@@ -336,14 +356,14 @@ def main():
         if len(vai) == 0:
             print("PL finetune done (FULL); pl checkpoints saved", flush=True)
             return
-        q2 = np.mean([unit(pl_preds[e]) for e in (6, 9, 12)], 0)
+        q2 = np.mean([unit(pl_preds[e]) for e in PL_SAVE_EPOCHS], 0)
         g2 = cosine(y[vai], q2)
         per2 = [cosine(y[vai][m == x], q2[m == x]) for x in np.unique(m)]
-        print("PL RESULT ens(6,9,12) global", round(g2, 6),
+        print(f"PL RESULT ens{PL_SAVE_EPOCHS} global", round(g2, 6),
               "month_mean", round(float(np.mean(per2)), 6),
               "worst", round(float(min(per2)), 6), flush=True)
         print(f"PL vs supervised: {g2 - g:+.6f}", flush=True)
-        np.savez(f"output/{PREFIX}_pl_oof.npz", sample_id=sid[vai], target=y[vai], month=m,
+        np.savez(f"output/{PREFIX}_{PL_TAG}_oof.npz", sample_id=sid[vai], target=y[vai], month=m,
                  **{f"ep{e}": p for e, p in pl_preds.items()})
 
 
