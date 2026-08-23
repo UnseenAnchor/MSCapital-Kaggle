@@ -1,0 +1,81 @@
+# 迭代复盘：Dual-Event Stack（原 Event256 + SSL-Event）——候选可提交
+
+日期：2026-08-23。
+
+## 动机
+
+此前 test-domain SSL 直接**替换**原 Event256：三折正向，但 Public 0.146 持平。两者训练初始化与 test 预测并不相同；替换会丢掉原 Event256 的独立误差。本轮不训练新模型、不使用伪标签，保留两个事件成员共同进入 Stack。
+
+固定原五成员权重：
+
+```text
+W5 = [LGB .176, RealMLP .132, v3 .132, Joint .308, MultiRes .132]
+```
+
+基线为 `W5 + original Event256(.20)`；新方案为简单圆整权重：
+
+```text
+W5 + original Event256(.10) + supervised SSL-Event(.20)
+```
+
+全部成员中心化并 unit-normalize，最终仍使用 `60% public ref + 40% self stack`。
+
+## 三折主结果
+
+| Fold | 原 Event Stack global/month/worst | SSL 替换版 | Dual-Event | Dual vs 原版 |
+|---|---|---|---|---|
+| Proxy | 0.160675 / 0.156605 / 0.136405 | 0.161577 / 0.157959 / 0.140180 | **0.162018 / 0.158191 / 0.139872** | **+0.001343 / +0.001586 / +0.003467** |
+| Middle | 0.156654 / 0.156787 / 0.140635 | 0.158199 / 0.158324 / 0.143232 | **0.157999 / 0.158076 / 0.142405** | **+0.001345 / +0.001288 / +0.001769** |
+| Late | 0.174707 / 0.163915 / 0.141398 | 0.174998 / 0.164752 / 0.142644 | **0.175808 / 0.165290 / 0.142148** | **+0.001101 / +0.001375 / +0.000750** |
+
+相对当前 Public 0.146 的原 Event Stack：三折 global、月均、最差月 **9/9 全正向**；global 平均 +0.001263。
+
+## 防过拟合验证
+
+### Leave-one-fold 权重选择
+
+每次仅在另外两折的 0.01 网格上选权重，再检查 held-out fold：
+
+| Held-out | 训练折选择的 (original, SSL) | Held-out global/month/worst 增量 |
+|---|---:|---:|
+| Proxy | (0.09, 0.22) | +0.001362 / +0.001637 / +0.003714 |
+| Middle | (0.14, 0.22) | +0.001123 / +0.001042 / +0.001332 |
+| Late | (0.05, 0.24) | +0.000893 / +0.001319 / +0.000943 |
+
+held-out 9/9 仍正向，且选出的区域都围绕“少量原 Event + 约 0.20 SSL Event”的宽平台。最终不用网格最优 `(0.09, 0.23)`，而使用更简单的 `(0.10, 0.20)`。
+
+### 月份稳定性
+
+- Proxy：21/26 月正向；
+- Middle：7/10 月正向；
+- Late：8/9 月正向；
+- 负月份最大变化约 -0.0018，未集中在最新 Late 月份。
+
+### 部分 Stack-neutralization
+
+固定扫描 alpha `{0.05, 0.10, 0.15, 0.20, 0.30}`。最大平均 global 仅 +0.000016，且 Middle 全部回退；判定为噪声，候选不使用 neutralization。
+
+## Test 候选
+
+- 文件：`output/candidate_dual_event_public60_40_e10_s20.csv`
+- 行数：647,896；sample_id 唯一且完整；无 NaN/Inf；
+- SHA256：`9d91dd27849cf144d77bf66a03abb4ad91fd7d1313682e4841999f31586b15b0`
+- 完整可复现 manifest：`docs/reviews/submissions/CANDIDATE_DUAL_EVENT_E10_S20_MANIFEST.json`，SHA256 `bb14926cf84687dec4e8d02543caca61908a964bdeb55d6e4b4cc46d6c61ff6f`；包含固定 tie-break、LOO 结果、月份符号、全部 test/OOF 输入 SHA256；
+- 与真实最佳 ref `55601441`（Public 0.146）相关性：**0.99884837**；
+- 与 SSL ref `55666656`（Public 0.146）相关性：0.99976761。
+
+历史 Event256 首次成功时三折平均 +0.0015、候选相关性 0.99934，Public 从 0.145 到 0.146。本候选三折平均 +0.001263、与最佳相关性更低（0.99885），达到一次校准提交的合理强度。
+
+## 决策
+
+**达到可提交门槛，但不自动提交。** 请求用户批准后只提交该唯一候选；不做邻近权重多次上传。
+
+提交命令：
+
+```bash
+D:/ProgramData/miniconda3/python.exe src/submit.py \
+  output/candidate_dual_event_public60_40_e10_s20.csv \
+  "Dual Event256 + SSL-Event robust stack e10_s20"
+```
+
+若 Public >0.146：固化 Dual-Event；若 =0.146：判定增量低于显示精度；若 <0.146：回退 `55601441`。
