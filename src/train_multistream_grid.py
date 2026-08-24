@@ -12,7 +12,7 @@ ROOT=os.environ.get('GRID_ROOT','features/grid_v2'); GRID_VERSION=os.environ.get
 EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 10; BATCH=int(os.environ.get('BATCH','256')); ACCUM=int(os.environ.get('ACCUM_STEPS','1'))
 TRAIN_END=int(os.environ.get('TRAIN_END','62')); VALID_END=int(os.environ.get('VALID_END','71')); TRAIN_START=int(os.environ.get('TRAIN_START','0')); SEED=int(os.environ.get('SEED','42')); OUT_PREFIX=os.environ.get('OUT_PREFIX','multistream'); D_MODEL=int(os.environ.get('D_MODEL','64')); N_LAYERS=int(os.environ.get('N_LAYERS','2')); LR=float(os.environ.get('LR','0.001')); LAMBDA_COS=float(os.environ.get('LAMBDA_COS','1.0'))
 RESUME=os.environ.get('RESUME_CHECKPOINT','');START_EPOCH=int(os.environ.get('START_EPOCH','0'));RAM_BATCHED=os.environ.get('RAM_BATCHED','0')=='1'
-DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'));RECENCY_HALFLIFE=float(os.environ.get('RECENCY_HALFLIFE','0'));MONTH_BALANCED=os.environ.get('MONTH_BALANCED','0')=='1';SSL_INIT_PREFIX=os.environ.get('SSL_INIT_PREFIX','')
+DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'));RECENCY_HALFLIFE=float(os.environ.get('RECENCY_HALFLIFE','0'));MONTH_BALANCED=os.environ.get('MONTH_BALANCED','0')=='1';SSL_INIT_PREFIX=os.environ.get('SSL_INIT_PREFIX','');MODALITY_DROPOUT=os.environ.get('MODALITY_DROPOUT','0')=='1'
 M_LEN=int(os.environ.get('MARKET_LEN','200')); F_LEN=int(os.environ.get('FLOW_LEN','60')); M_CH,T_CH,O_CH=11,7,10;VARIANT=os.environ.get('MODEL_VARIANT','base')
 torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
@@ -132,13 +132,19 @@ def main():
  sch=torch.optim.lr_scheduler.CosineAnnealingLR(opt,EPOCHS)
  oof_preds={}
  for _ in range(start_epoch):sch.step()
- print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, variant={VARIANT}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, ram_batched={RAM_BATCHED}, domain_sampling={DOMAIN_SAMPLING}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
+ print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, variant={VARIANT}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, ram_batched={RAM_BATCHED}, domain_sampling={DOMAIN_SAMPLING}, modality_dropout={MODALITY_DROPOUT}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
  for ep in range(start_epoch,EPOCHS):
   q.train();tot=nseen=0;st=time.time();opt.zero_grad(set_to_none=True);pending=0
   epoch_batches=ram_batches(A,tr,y,BATCH,True,SEED+ep,drop_last=True,sample_weights=sample_weights) if RAM_BATCHED else tl
   for bi,batch in enumerate(epoch_batches):
    if RAM_BATCHED:m,t,o,yy=prep.batch(batch)
    else:m,t,o,yy=[z.to(DEVICE,non_blocking=True) for z in batch]
+   if MODALITY_DROPOUT:
+    # Fixed 55/15/15/15 batch mixture: full, market-drop, tx-drop, order-drop.
+    r=torch.rand((),device=DEVICE)
+    if r<0.15:m=torch.zeros_like(m)
+    elif r<0.30:t=torch.zeros_like(t)
+    elif r<0.45:o=torch.zeros_like(o)
    with torch.cuda.amp.autocast(enabled=DEVICE.type=='cuda'):loss=lossfn(q(m,t,o),yy)
    if not torch.isfinite(loss):
     opt.zero_grad(set_to_none=True);pending=0;continue
