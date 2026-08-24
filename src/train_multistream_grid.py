@@ -12,7 +12,7 @@ ROOT=os.environ.get('GRID_ROOT','features/grid_v2'); GRID_VERSION=os.environ.get
 EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 10; BATCH=int(os.environ.get('BATCH','256')); ACCUM=int(os.environ.get('ACCUM_STEPS','1'))
 TRAIN_END=int(os.environ.get('TRAIN_END','62')); VALID_END=int(os.environ.get('VALID_END','71')); TRAIN_START=int(os.environ.get('TRAIN_START','0')); SEED=int(os.environ.get('SEED','42')); OUT_PREFIX=os.environ.get('OUT_PREFIX','multistream'); D_MODEL=int(os.environ.get('D_MODEL','64')); N_LAYERS=int(os.environ.get('N_LAYERS','2')); LR=float(os.environ.get('LR','0.001')); LAMBDA_COS=float(os.environ.get('LAMBDA_COS','1.0'))
 RESUME=os.environ.get('RESUME_CHECKPOINT','');START_EPOCH=int(os.environ.get('START_EPOCH','0'));RAM_BATCHED=os.environ.get('RAM_BATCHED','0')=='1'
-DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'));RECENCY_HALFLIFE=float(os.environ.get('RECENCY_HALFLIFE','0'));MONTH_BALANCED=os.environ.get('MONTH_BALANCED','0')=='1'
+DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'));RECENCY_HALFLIFE=float(os.environ.get('RECENCY_HALFLIFE','0'));MONTH_BALANCED=os.environ.get('MONTH_BALANCED','0')=='1';SSL_INIT_PREFIX=os.environ.get('SSL_INIT_PREFIX','')
 M_LEN=int(os.environ.get('MARKET_LEN','200')); F_LEN=int(os.environ.get('FLOW_LEN','60')); M_CH,T_CH,O_CH=11,7,10;VARIANT=os.environ.get('MODEL_VARIANT','base')
 torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
@@ -118,6 +118,9 @@ def main():
  if RAM_BATCHED:A=load_ram_arrays(A);prep=GPUBatchPrep(norm);tl=vl=None
  else:tl=torch.utils.data.DataLoader(DS(A,tr,norm,y),BATCH,shuffle=True,num_workers=0,pin_memory=True,drop_last=True);vl=torch.utils.data.DataLoader(DS(A,va,norm,y),BATCH*2,shuffle=False,num_workers=0,pin_memory=True)
  q=Net().to(DEVICE)
+ if SSL_INIT_PREFIX:
+  for attr,key in ((q.m,'market'),(q.t,'tx'),(q.o,'order')):
+   path=f'output/{SSL_INIT_PREFIX}_ssl_{key}.pt';state=torch.load(path,map_location=DEVICE);matched={k:v for k,v in state.items() if k in attr.state_dict() and attr.state_dict()[k].shape==v.shape};attr.load_state_dict(matched,strict=False);print(f'SSL init {key}: {len(matched)}/{len(state)} keys from {path}',flush=True)
  try:opt=torch.optim.AdamW(q.parameters(),LR,weight_decay=1e-4,fused=DEVICE.type=='cuda')
  except TypeError:opt=torch.optim.AdamW(q.parameters(),LR,weight_decay=1e-4)
  sc=torch.cuda.amp.GradScaler(enabled=DEVICE.type=='cuda');best=-1;start_epoch=START_EPOCH
@@ -127,6 +130,7 @@ def main():
    q.load_state_dict(state['model']);opt.load_state_dict(state['optimizer']);sc.load_state_dict(state['scaler']);start_epoch=int(state.get('epoch',start_epoch))
   else:q.load_state_dict(state)
  sch=torch.optim.lr_scheduler.CosineAnnealingLR(opt,EPOCHS)
+ oof_preds={}
  for _ in range(start_epoch):sch.step()
  print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, variant={VARIANT}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, ram_batched={RAM_BATCHED}, domain_sampling={DOMAIN_SAMPLING}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
  for ep in range(start_epoch,EPOCHS):
@@ -157,11 +161,15 @@ def main():
     p=np.concatenate(po);yt=np.concatenate(yo)
    else:p,yt=pred(q,vl)
    raw=cos(yt,p);cen=cos(yt,p,True);metrics=f'raw={raw:.5f}, centered={cen:.5f}'
+   oof_preds[ep+1]=p.copy()
   else:
    raw=cen=float('nan');metrics='full_data_no_validation'
   print(f'epoch {ep+1}/{EPOCHS}: loss={tot/nseen:.5f}, {metrics}, sec={time.time()-st:.0f}',flush=True)
   torch.save(q.state_dict(),f'output/{OUT_PREFIX}_ep{ep+1}.pt')
   torch.save({'model':q.state_dict(),'optimizer':opt.state_dict(),'scaler':sc.state_dict(),'epoch':ep+1},f'output/{OUT_PREFIX}_train_state.pt')
   if len(va) and raw>best:best=raw;torch.save(q.state_dict(),f'output/{OUT_PREFIX}_best.pt')
+ if len(va) and oof_preds:
+  np.savez(f'output/{OUT_PREFIX}_oof.npz',sample_id=lab.sample_id.to_numpy()[va],target=y[va],month=mo[va],**{f'ep{k}':v for k,v in oof_preds.items()})
+  print('saved OOF',f'output/{OUT_PREFIX}_oof.npz',sorted(oof_preds),flush=True)
  print('best_raw=',best)
 if __name__=='__main__':main()
