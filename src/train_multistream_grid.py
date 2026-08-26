@@ -12,7 +12,7 @@ ROOT=os.environ.get('GRID_ROOT','features/grid_v2'); GRID_VERSION=os.environ.get
 EPOCHS=int(sys.argv[1]) if len(sys.argv)>1 else 10; BATCH=int(os.environ.get('BATCH','256')); ACCUM=int(os.environ.get('ACCUM_STEPS','1'))
 TRAIN_END=int(os.environ.get('TRAIN_END','62')); VALID_END=int(os.environ.get('VALID_END','71')); TRAIN_START=int(os.environ.get('TRAIN_START','0')); SEED=int(os.environ.get('SEED','42')); OUT_PREFIX=os.environ.get('OUT_PREFIX','multistream'); D_MODEL=int(os.environ.get('D_MODEL','64')); N_LAYERS=int(os.environ.get('N_LAYERS','2')); LR=float(os.environ.get('LR','0.001')); LAMBDA_COS=float(os.environ.get('LAMBDA_COS','1.0'))
 RESUME=os.environ.get('RESUME_CHECKPOINT','');START_EPOCH=int(os.environ.get('START_EPOCH','0'));RAM_BATCHED=os.environ.get('RAM_BATCHED','0')=='1'
-DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'));RECENCY_HALFLIFE=float(os.environ.get('RECENCY_HALFLIFE','0'));MONTH_BALANCED=os.environ.get('MONTH_BALANCED','0')=='1';SSL_INIT_PREFIX=os.environ.get('SSL_INIT_PREFIX','');MODALITY_DROPOUT=os.environ.get('MODALITY_DROPOUT','0')=='1';CORAL_LAMBDA=float(os.environ.get('CORAL_LAMBDA','0'))
+DOMAIN_SAMPLING=os.environ.get('DOMAIN_SAMPLING','0')=='1';DOMAIN_POWER=float(os.environ.get('DOMAIN_POWER','0.5'));RECENCY_HALFLIFE=float(os.environ.get('RECENCY_HALFLIFE','0'));MONTH_BALANCED=os.environ.get('MONTH_BALANCED','0')=='1';SSL_INIT_PREFIX=os.environ.get('SSL_INIT_PREFIX','');MODALITY_DROPOUT=os.environ.get('MODALITY_DROPOUT','0')=='1';CORAL_LAMBDA=float(os.environ.get('CORAL_LAMBDA','0'));PAIR_LAMBDA=float(os.environ.get('PAIR_LAMBDA','0'))
 M_LEN=int(os.environ.get('MARKET_LEN','200')); F_LEN=int(os.environ.get('FLOW_LEN','60')); M_CH,T_CH,O_CH=11,7,10;VARIANT=os.environ.get('MODEL_VARIANT','base')
 torch.backends.cudnn.benchmark=True;torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
 
@@ -98,6 +98,8 @@ def lossfn(p,y):
  p=torch.nan_to_num(p,nan=0.0,posinf=0.0,neginf=0.0);p0=p-p.mean();y0=y-y.mean();cos=1-F.cosine_similarity(p0[None],y0[None],dim=1,eps=1e-8).mean();return LAMBDA_COS*cos+(1-LAMBDA_COS)*F.smooth_l1_loss(p,y*1000.0)
 def coral_loss(x,y):
  x=x-x.mean(0,keepdim=True);y=y-y.mean(0,keepdim=True);n=max(1,x.shape[0]-1);cx=x.T@x/n;cy=y.T@y/n;return (cx-cy).square().mean()
+def pair_loss(p,y):
+ perm=torch.randperm(p.shape[0],device=p.device);ps=(p-p.mean())/(p.std()+1e-6);ys=(y-y.mean())/(y.std()+1e-6);margin=(ps-ps[perm])*(ys-ys[perm]);return F.softplus(-margin).mean()
 def cos(y,p,center=False):
  if center:y=y-y.mean();p=p-p.mean()
  return float(np.dot(y,p)/(np.linalg.norm(y)*np.linalg.norm(p)+1e-12))
@@ -136,7 +138,7 @@ def main():
  for _ in range(start_epoch):sch.step()
  if CORAL_LAMBDA>0:
   At=arrays('test',647896);test_dl=torch.utils.data.DataLoader(DS(At,np.arange(647896),norm),BATCH,shuffle=True,num_workers=0,pin_memory=True);test_iter=iter(test_dl)
- print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, variant={VARIANT}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, ram_batched={RAM_BATCHED}, domain_sampling={DOMAIN_SAMPLING}, modality_dropout={MODALITY_DROPOUT}, coral_lambda={CORAL_LAMBDA}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
+ print(f'DEVICE={DEVICE}, prefix={OUT_PREFIX}, variant={VARIANT}, grid={GRID_VERSION} {M_LEN}/{F_LEN}, d={D_MODEL}, layers={N_LAYERS}, split=< {TRAIN_END} / [{TRAIN_END},{VALID_END}), params={sum(p.numel() for p in q.parameters())/1e6:.2f}M, micro_batch={BATCH}, accum={ACCUM}, effective_batch={BATCH*ACCUM}, train={len(tr)}, val={len(va)}, ram_batched={RAM_BATCHED}, domain_sampling={DOMAIN_SAMPLING}, modality_dropout={MODALITY_DROPOUT}, coral_lambda={CORAL_LAMBDA}, pair_lambda={PAIR_LAMBDA}, resume={RESUME or None}, start_epoch={start_epoch}',flush=True)
  for ep in range(start_epoch,EPOCHS):
   q.train();tot=nseen=0;st=time.time();opt.zero_grad(set_to_none=True);pending=0
   epoch_batches=ram_batches(A,tr,y,BATCH,True,SEED+ep,drop_last=True,sample_weights=sample_weights) if RAM_BATCHED else tl
@@ -156,7 +158,9 @@ def main():
    with torch.cuda.amp.autocast(enabled=DEVICE.type=='cuda'):
     if CORAL_LAMBDA>0:
      pred_tr,repr_tr=q(m,t,o,True);_,repr_te=q(tm,tt,to,True);loss=lossfn(pred_tr,yy)+CORAL_LAMBDA*coral_loss(repr_tr,repr_te)
-    else:loss=lossfn(q(m,t,o),yy)
+    else:
+     pred_tr=q(m,t,o);loss=lossfn(pred_tr,yy)
+    if PAIR_LAMBDA>0:loss=loss+PAIR_LAMBDA*pair_loss(pred_tr,yy)
    if not torch.isfinite(loss):
     opt.zero_grad(set_to_none=True);pending=0;continue
    sc.scale(loss/ACCUM).backward();pending+=1;tot+=loss.item()*len(yy);nseen+=len(yy)
